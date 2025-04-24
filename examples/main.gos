@@ -16,12 +16,19 @@ func hello(name string) string {
 }  
 printf(hello("sofia"))
 
+async func test() Promise {
+  return await "promise"
+}
+const test2 = await test()
+
 class Person {
   name string = "Sofia"
   func greet() string {
     return "Hello " + self.name
   }
 }
+
+const per Person = new Person()
 
 for (let i number = 0; i < 5; i = i + 1) {
   printf(i)
