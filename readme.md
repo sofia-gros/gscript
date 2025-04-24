@@ -27,7 +27,10 @@ func main() bool {
   return true
 }
 
-class Person {}
+class Person {
+  prop object = {}
+  method(name string) string {}
+}
 
 for(let i number = 0; i < 10; i = i + 1) {}
 ```
