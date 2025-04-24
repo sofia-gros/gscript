@@ -4,6 +4,7 @@ start: statement+
 ?statement: import_stmt
           | var_decl
           | func_def
+          | async_func_def
           | return_stmt
           | func_call_stmt
           | if_stmt
@@ -16,10 +17,19 @@ import_stmt: "import" import_plain "from" import_string
 import_plain: CNAME
 import_string: STRING
 
-var_decl: (LET | CONST) CNAME type? "=" expr
+var_decl: (LET | CONST) CNAME type? "=" func_expr? expr
 LET: "let"
 CONST: "const"
+
 func_def: "func" CNAME "(" params? ")" return_type block
+async_func_def: "async" "func" CNAME "(" params? ")" return_type block
+
+NEW: "new"
+ASYNC: "async"
+AWAIT: "await"
+func_expr: NEW
+         | ASYNC
+         | AWAIT
 
 return_stmt: "return" expr ";"?
 
@@ -57,6 +67,7 @@ block: "{" statement* "}"
      | expr "<" expr   -> lt
      | expr ">=" expr  -> gte
      | expr "<=" expr  -> lte
+     | AWAIT expr      -> awa
 
 assign: (CNAME | attr_access) "=" expr  -> assign
 attr_access: CNAME "." CNAME            -> attr_access
