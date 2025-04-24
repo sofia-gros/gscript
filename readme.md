@@ -10,7 +10,7 @@
 - [x] 関数呼び出し (new)
 - [x] Class
 - [x] クラス呼び出し
-- [x] 非同期処理: async, await
+- [x] 非同期処理 (async, await)
 - [x] 計算 & 比較 (+ - / * > < >= <= == !=)
 - [x] for
 - [x] printf
