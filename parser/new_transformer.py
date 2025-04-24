@@ -28,8 +28,11 @@ class MyLangTransformer(Transformer):
 
     def var_decl(self, items):
         kind, name = items[0], items[1]
+        if len(items) == 4:
+            expr = items[3].children[0] + " " if isinstance(items[3], Tree) else ""
+        else: expr = ""
         value = items[-1]
-        return self._indent(f"{kind} {name} = {value};")
+        return self._indent(f"{kind} {name} = {expr}{value};")
 
     def class_member(self, items):
         return items[0]  # 文字列化された field_decl や func_def をそのまま返す
@@ -44,6 +47,13 @@ class MyLangTransformer(Transformer):
         params = extract_param_names(items[1]) if isinstance(items[1], Tree) else ""
         body = items[-1]
         line = f"function {name}({params}) {body}"
+        return self._indent(line)
+        
+    def async_func_def(self, items):
+        name = items[0]
+        params = extract_param_names(items[1]) if isinstance(items[1], Tree) else ""
+        body = items[-1]
+        line = f"async function {name}({params}) {body}"
         return self._indent(line)
 
     def return_stmt(self, items):
@@ -114,6 +124,7 @@ class MyLangTransformer(Transformer):
     def gte(self, items): return f"({items[0]} >= {items[1]})"
     def lte(self, items): return f"({items[0]} <= {items[1]})"
     def assign(self, items): return f"{items[0]} = {items[1]}"
+    def awa(self, items): return f"await {items[1]}"
     
     def attr_access(self, items):
         base, attr = str(items[0]), str(items[1])
