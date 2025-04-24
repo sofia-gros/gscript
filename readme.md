@@ -16,3 +16,18 @@
 - [x] printf
 - [x] セミコロン任意化
 - [ ] 型の評価
+
+```main.gos
+import path from "pathlib"
+
+let a string = "a"
+let b number = 0.2
+
+func main() bool {
+  return true
+}
+
+class Person {}
+
+for(let i number = 0; i < 10; i = i + 1) {}
+```
