@@ -17,7 +17,7 @@
 - [x] セミコロン任意化
 - [ ] 型の評価
 
-```main.gos
+```go
 import path from "pathlib"
 
 let a string = "a"
