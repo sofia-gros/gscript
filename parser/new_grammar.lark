@@ -1,0 +1,75 @@
+// gscript.lark
+start: statement+
+
+?statement: import_stmt
+          | var_decl
+          | func_def
+          | return_stmt
+          | func_call_stmt
+          | if_stmt
+          | for_stmt
+          | class_def
+
+import_stmt: "import" import_plain "from" import_string
+           | "import" STRING
+
+import_plain: CNAME
+import_string: STRING
+
+var_decl: (LET | CONST) CNAME type? "=" expr
+LET: "let"
+CONST: "const"
+func_def: "func" CNAME "(" params? ")" return_type block
+
+return_stmt: "return" expr ";"?
+
+func_call_stmt: CNAME "(" args? ")" ";"?
+
+func_call: CNAME "(" args? ")"
+args: expr ("," expr)*
+
+if_stmt: "if" "(" expr ")" block ("else" block)?
+
+for_stmt: "for" "(" var_decl ";" expr ";" expr ")" block
+
+class_def: "class" CNAME class_block
+class_block: "{" class_member* "}"
+class_method: "func" CNAME "(" params? ")" return_type block
+class_member: field_decl | var_decl | class_method
+field_decl: CNAME type "=" expr
+
+params: param ("," param)*
+param: CNAME type
+
+return_type: type               -> return_type
+           |                    -> empty_return
+type: CNAME
+
+block: "{" statement* "}"
+
+?expr: assign
+     | func_call
+     | add
+     | atom
+     | expr "==" expr  -> eq
+     | expr "!=" expr  -> neq
+     | expr ">" expr   -> gt
+     | expr "<" expr   -> lt
+     | expr ">=" expr  -> gte
+     | expr "<=" expr  -> lte
+
+assign: (CNAME | attr_access) "=" expr  -> assign
+attr_access: CNAME "." CNAME            -> attr_access
+?add: expr "+" expr -> add
+
+?atom: CNAME "." CNAME  -> attr_access
+     | CNAME            -> var
+     | STRING           -> string
+     | NUMBER           -> number
+     | "(" expr ")"
+
+%import common.CNAME
+%import common.ESCAPED_STRING -> STRING
+%import common.SIGNED_NUMBER  -> NUMBER
+%import common.WS
+%ignore WS

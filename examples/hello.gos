@@ -1,0 +1,30 @@
+import "http"
+
+let message string = "Hello"
+const PI float = 3.14
+
+func hello(m string) string {
+  return m + " World!"
+}
+
+print(hello(message))
+
+
+class Person {
+  name string
+  age number
+
+  func greet() string {
+    return "Hi, I'm " + self.name + " and I'm " + self.age + " years old."
+  }
+  func test(a string, b string) string {
+    return a + b
+  }
+}
+
+let per Person = new Person()
+per.name = "Sofia"
+per.age = 28
+print(per.greet())
+
+print(per.test("Hello", "World!"))

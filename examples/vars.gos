@@ -1,0 +1,5 @@
+let hoge string = "hoge"
+const foo int = 800
+const PI float = 3.14
+
+const fun string = str(3.14)
