@@ -16,6 +16,7 @@
 - [x] printf
 - [x] セミコロン任意化
 - [ ] 型の評価
+- [ ] struct構文
 
 ```go
 import path from "pathlib"
