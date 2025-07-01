@@ -15,8 +15,11 @@
 - [x] for
 - [x] printf
 - [x] セミコロン任意化
-- [ ] 型の評価
+- [ ] 型の評価 (コンパイル時)
 - [ ] struct構文
+
+- [ ] prototypeチェーン
+- [ ] Objectチェーン
 
 ```go
 import path from "pathlib"
