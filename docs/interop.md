@@ -3,6 +3,8 @@
 GS の構文を増やさず、既存の import と型注釈を外部モジュールにも利用できます。
 CLI と `gscript.project.Project` / `build_project` は、外部 import がある場合に 外部の型定義を読み込み、GS自身の型検査器でGSコードを検査します。TypeScript APIは外部のJS/TS・型定義の読み取りと変換に利用し、GSの型検査を委譲しません。ファイルを持たない `compile_source` は GS 単体の変換 API です。外部モジュールの解決にはプロジェクト API を使ってください。
 
+次のGSコードを`game.gs`に保存し、そのプロジェクトのディレクトリーで実行します。
+
 ```sh
 npm install --save-dev typescript@5.9.3
 npm install phaser@3.90.0
