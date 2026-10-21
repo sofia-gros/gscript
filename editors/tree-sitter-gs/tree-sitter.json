@@ -1,0 +1,27 @@
+{
+  "grammars": [
+    {
+      "name": "gs",
+      "camelcase": "GS",
+      "scope": "source.gs",
+      "path": ".",
+      "file-types": [
+        "gs",
+        "gos"
+      ]
+    }
+  ],
+  "metadata": {
+    "version": "0.4.0",
+    "license": "UNLICENSED",
+    "description": "GS tolerant lexical grammar",
+    "authors": [
+      {
+        "name": "sofia-gros"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/sofia-gros/gscript"
+    }
+  }
+}
