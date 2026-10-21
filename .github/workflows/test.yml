@@ -1,9 +1,12 @@
 name: Compiler tests
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
+      fail-fast: false
       matrix:
         python: ['3.12', '3.13']
         node: ['22', '24']
@@ -15,7 +18,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
       - run: python -m pip install .
       - run: python -m unittest discover -s tests -v
-      - run: gscript examples/main.gos -o build/main.mjs
-      - run: node build/main.mjs
+      - run: gs examples/hello.gs --format js -o build/hello.js
+      - run: node build/hello.js

@@ -1,0 +1,110 @@
+name: Release compiler
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.13']
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: python -m pip install .
+      - run: python -m unittest discover -s tests -v
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python scripts/check_version.py "${{ github.ref_name }}"
+  portable:
+    needs: tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: python -m pip install -r requirements-build.txt
+      - run: python -m build --no-isolation --outdir release-assets
+      - run: python scripts/build_release.py --zipapp --output release-assets
+      - name: Test zipapp
+        run: python scripts/smoke_compiler.py release-assets/gs-v0.3.0.pyz
+      - name: Test installed wheel outside checkout
+        run: |
+          python -m venv /tmp/gs-installed
+          /tmp/gs-installed/bin/python -m pip install --no-deps release-assets/*.whl
+          cd /tmp
+          /tmp/gs-installed/bin/gs --version
+          /tmp/gs-installed/bin/gs "$GITHUB_WORKSPACE/tests/fixtures/modules/main.gs" --out-dir /tmp/gs-built
+          node /tmp/gs-built/main.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-compiler
+          path: release-assets/*
+          if-no-files-found: error
+  native:
+    needs: tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: python -m pip install -r requirements-build.txt
+      - run: python -m unittest discover -s tests -v
+      - run: python scripts/build_release.py --native --output release-assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.os }}
+          path: release-assets/*
+          if-no-files-found: error
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [tests, portable, native]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create checksums
+        run: python scripts/checksums.py release-assets
+      - name: Publish verified compiler
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          gh release create "$RELEASE_TAG" release-assets/*
+          --repo "$GITHUB_REPOSITORY" --verify-tag
+          --title "GS $RELEASE_TAG"
+          --notes-file "docs/releases/$RELEASE_TAG.md"

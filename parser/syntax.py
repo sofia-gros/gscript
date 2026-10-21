@@ -154,6 +154,8 @@ class Parser:
             self.take(']')
             return '[]' + self.type_name()
         result = self.name()
+        while self.accept('.'):
+            result += '.' + self.name()
         if self.accept('<'):
             result += '<' + self.type_name()
             self.take('>')
@@ -243,6 +245,8 @@ class Parser:
         word = self.token.text
         if word == 'export':
             self.take()
+            if self.accept('default'):
+                return Node('default', children=[self.expression()], line=line)
             declaration = self.statement()
             if declaration.kind not in ('decl', 'func', 'struct'):
                 self.fail('export requires a variable, function or struct declaration')
@@ -377,6 +381,8 @@ class Parser:
         elif word == 'new':
             self.take()
             name = self.name()
+            while self.accept('.'):
+                name += '.' + self.name()
             self.take('(')
             left = Node('new', name, self.list_values(')'), line)
         elif self.accept('('):

@@ -22,7 +22,7 @@ class Type:
             return f'Promise<{self.args[0]}>'
         if self.kind == 'function':
             return 'func(' + ', '.join(map(str, self.args[:-1])) + ') ' + str(self.args[-1])
-        return self.name or self.kind
+        return self.name.rsplit('::', 1)[-1] or self.kind
 
 
 ANY = Type('any')
@@ -46,11 +46,26 @@ def promise(result):
     return Type('promise', args=(result,))
 
 
-@dataclass
 class Symbol:
-    typ: Type
-    constant: bool = False
-    category: str = 'variable'
+    def __init__(self, typ, constant=False, category='variable', target=None, initialized=True):
+        self._initialized = initialized
+        self._typ, self.constant, self.category, self.target = typ, constant, category, target
+
+    @property
+    def initialized(self):
+        return self.target.initialized if self.target is not None else self._initialized
+
+    @initialized.setter
+    def initialized(self, value):
+        self._initialized = value
+
+    @property
+    def typ(self):
+        return self.target.typ if self.target is not None else self._typ
+
+    @typ.setter
+    def typ(self, value):
+        self._typ = value
 
 
 @dataclass
@@ -77,14 +92,21 @@ def unwrap(node):
 
 
 class Checker:
-    def __init__(self):
-        self.structs = {}
+    def __init__(self, module_id='', structs=None, exports=None, module_exports=None):
+        self.module_id = module_id
+        self.structs = structs if structs is not None else {}
+        self.type_names = {}
+        self.exports = exports if exports is not None else {}
+        self.module_exports = module_exports if module_exports is not None else {}
+        self.prepared = set()
         self.scopes = [{}]
         self.return_type = None
         self.async_context = True
         self.loop_depth = 0
         self.types = {}
         self.seen_functions = set()
+        self.defer_functions = False
+        self.deferred_functions = []
 
     def fail(self, node, message):
         raise CompileError(message, node.line)
@@ -102,7 +124,13 @@ class Checker:
             self.fail(node, f'reserved identifier: {name}')
         if name in self.scopes[-1]:
             self.fail(node, f'duplicate declaration: {name}')
-        self.scopes[-1][name] = Symbol(typ, constant, category)
+        symbol = self.exports.get(name) if len(self.scopes) == 1 else None
+        if symbol is None:
+            symbol = Symbol(typ, constant, category)
+        else:
+            symbol.typ, symbol.constant, symbol.category = typ, constant, category
+            symbol.initialized = True
+        self.scopes[-1][name] = symbol
 
     def lookup(self, node, name):
         for scope in reversed(self.scopes):
@@ -153,8 +181,8 @@ class Checker:
         primitive = {'string': STRING, 'any': ANY, 'object': OBJECT, 'void': VOID, 'Promise': promise(ANY)}
         if name in primitive:
             return primitive[name]
-        if name in self.structs:
-            return Type('struct', name)
+        if name in self.type_names:
+            return Type('struct', self.type_names[name])
         self.fail(node, f'unknown type: {name}')
 
     def compatible(self, expected, actual):
@@ -174,6 +202,8 @@ class Checker:
         return False
 
     def check(self, node, expected, actual):
+        if actual.kind == 'pending':
+            self.fail(node, 'cyclic value initialization requires a declared type')
         if not self.compatible(expected, actual):
             self.fail(node, f'type mismatch: expected {expected}, got {actual}')
 
@@ -184,19 +214,25 @@ class Checker:
             ret = promise(ret)
         return function([self.declared_type(node, t) for _, t in params], ret)
 
-    def predeclare(self, nodes, module=False):
+    def declare_structs(self, nodes, module=False):
         for original in nodes:
             n = unwrap(original)
-            if original.kind == 'export' and not module:
+            if n.kind == 'default' and 'default' not in self.exports:
+                self.exports['default'] = Symbol(ANY, True)
+            if original.kind in ('export', 'default') and not module:
                 self.fail(original, 'exports must be at module scope')
             if n.kind == 'struct':
                 if not module:
                     self.fail(n, 'struct declarations must be at module scope')
                 name, _ = n.value
-                if name in self.structs:
+                key = f'{self.module_id}::{name}' if self.module_id else name
+                if key in self.structs:
                     self.fail(n, f'duplicate struct: {name}')
-                self.structs[name] = Struct()
-                self.bind(n, name, Type('constructor', name), True, 'struct')
+                self.structs[key] = Struct()
+                self.type_names[name] = key
+                self.bind(n, name, Type('constructor', key), True, 'struct')
+
+    def declare_signatures(self, nodes, module=False):
         for original in nodes:
             n = unwrap(original)
             if n.kind == 'func':
@@ -205,8 +241,10 @@ class Checker:
                 if receiver:
                     if not module:
                         self.fail(n, 'receiver methods must be at module scope')
-                    target = self.structs.get(receiver[1])
-                    if target is None:
+                    key = self.type_names.get(receiver[1])
+                    target = self.structs.get(key)
+                    # Methods may only be attached to a struct defined here.
+                    if target is None or key != (f'{self.module_id}::{receiver[1]}' if self.module_id else receiver[1]):
                         self.fail(n, f'unknown receiver type: {receiver[1]}')
                     if name in target.methods or name == 'constructor':
                         self.fail(n, f'duplicate or reserved method: {name}')
@@ -216,19 +254,26 @@ class Checker:
             elif n.kind == 'import':
                 if not module:
                     self.fail(n, 'imports must be at module scope')
-                for name in import_names(n.value[0]):
-                    self.bind(n, name, ANY, True, 'import')
+                if id(n) not in self.prepared:
+                    for name in import_names(n.value[0]):
+                        self.bind(n, name, ANY, True, 'import')
         for original in nodes:
             n = unwrap(original)
             if n.kind == 'struct':
                 name, fields = n.value
-                target = self.structs[name]
+                target = self.structs[self.type_names[name]]
                 for field_name, typ, _ in fields:
                     if field_name in target.fields or field_name in target.methods:
                         self.fail(n, f'duplicate struct field: {field_name}')
                     target.fields[field_name] = self.declared_type(n, typ)
                     if target.fields[field_name] == VOID:
                         self.fail(n, 'struct fields cannot be void')
+
+    def predeclare(self, nodes, module=False):
+        if module and self.prepared:
+            return
+        self.declare_structs(nodes, module)
+        self.declare_signatures(nodes, module)
 
     def run(self, program):
         self.statements(program.children, module=True)
@@ -254,7 +299,10 @@ class Checker:
                 self.statement(n)
         # Check bodies after surrounding declarations: closures see their lexical scope.
         for node in deferred:
-            self.check_function(node)
+            if self.defer_functions:
+                self.deferred_functions.append((node, list(self.scopes)))
+            else:
+                self.check_function(node)
 
     def check_function(self, node):
         if id(node) in self.seen_functions:
@@ -267,7 +315,7 @@ class Checker:
         try:
             with self.scope():
                 if receiver:
-                    self.bind(node, receiver[0], Type('struct', receiver[1]), True)
+                    self.bind(node, receiver[0], Type('struct', self.type_names[receiver[1]]), True)
                 for name, typ in params:
                     param_type = self.declared_type(node, typ)
                     if param_type == VOID:
@@ -314,6 +362,13 @@ class Checker:
         return typ
 
     def property(self, n, base, key):
+        if base.kind == 'namespace':
+            exports = self.module_exports[base.name]
+            if key not in exports:
+                self.fail(n, f'module has no export: {key}')
+            if not exports[key].initialized:
+                self.fail(n, f'module value used before initialization: {key}')
+            return exports[key].typ
         if base in (ANY, OBJECT):
             return ANY
         if base.kind == 'record':
@@ -370,6 +425,8 @@ class Checker:
             if v in ('nil', 'null'):
                 return NULL
             symbol = self.lookup(n, v)
+            if not symbol.initialized:
+                self.fail(n, f'module value used before initialization: {v}')
             n.builtin = v == 'printf' and symbol.category == 'global'
             return symbol.typ
         if k == 'array':
@@ -388,10 +445,14 @@ class Checker:
             fields, seen, dynamic = {}, set(), False
             target = None
             if k == 'composite':
-                symbol = self.lookup(n, v) if v in self.structs else None
-                if v not in self.structs or symbol.typ != Type('constructor', v):
+                try:
+                    symbol = self.lookup(n, v)
+                except CompileError:
                     self.fail(n, f'unknown struct: {v}')
-                target = self.structs[v].fields
+                if symbol.typ.kind != 'constructor':
+                    self.fail(n, f'unknown struct: {v}')
+                struct_key = symbol.typ.name
+                target = self.structs[struct_key].fields
             for item in c:
                 typ = self.expr(item.children[0])
                 if item.kind == 'spread':
@@ -416,7 +477,7 @@ class Checker:
                     if key not in target:
                         self.fail(n, f'unknown field {key} on {v}')
                     self.check(n, target[key], typ)
-                return Type('struct', v)
+                return Type('struct', struct_key)
             return OBJECT if dynamic else Type('record', fields=tuple(fields.items()))
         if k == 'spread':
             return self.expr(c[0])
@@ -463,14 +524,30 @@ class Checker:
             self.check(n, BOOL if v == '!' else NUMBER, typ)
             return BOOL if v == '!' else NUMBER
         if k == 'lambda':
+            if self.defer_functions:
+                self.deferred_functions.append((n, list(self.scopes)))
+                return self.signature(n)
             return self.check_function(n)
         if k == 'new':
-            symbol = self.lookup(n, v)
-            for arg in c:
-                self.expr(arg)
-            if symbol.typ.kind == 'constructor':
-                self.fail(n, 'use a struct literal, e.g. ' + v + '{}')
-            if symbol.typ != ANY:
+            names = v.split('.')
+            constructor = self.lookup(n, names[0]).typ
+            for name in names[1:]:
+                constructor = self.property(n, constructor, name)
+            args = [self.expr(arg) for arg in c]
+            if constructor.kind == 'constructor':
+                if len(args) > 1:
+                    self.fail(n, 'struct constructor accepts one field object')
+                if args:
+                    supplied = args[0]
+                    if supplied.kind != 'record':
+                        self.fail(n, 'struct constructor requires a statically known field object')
+                    fields = self.structs[constructor.name].fields
+                    for key, typ in supplied.fields:
+                        if key not in fields:
+                            self.fail(n, f'unknown field {key} on {constructor.name.rsplit("::", 1)[-1]}')
+                        self.check(n, fields[key], typ)
+                return Type('struct', constructor.name)
+            if constructor != ANY:
                 self.fail(n, f'{v} is not a JavaScript constructor')
             return ANY
         if k == 'call':
@@ -541,7 +618,10 @@ class Checker:
 
     def statement(self, n):
         k, v, c = n.kind, n.value, n.children
-        if k == 'decl':
+        if k == 'default':
+            self.exports['default'].typ = self.expr(c[0])
+            self.exports['default'].initialized = True
+        elif k == 'decl':
             kind, name, annotation = v
             expected = self.declared_type(n, annotation) if annotation else None
             actual = self.expr(c[0]) if c[0] else expected
@@ -550,12 +630,14 @@ class Checker:
             if expected:
                 self.check(n, expected, actual)
             self.bind(n, name, expected or actual, kind == 'const')
+            self.types[id(n)] = expected or actual
         elif k == 'assign':
             actual = self.expr(c[1])
             if v == ':=':
                 if actual == VOID:
                     self.fail(n, 'cannot declare a void variable')
                 self.bind(n, c[0].value, actual)
+                self.types[id(n)] = actual
             else:
                 expected = self.assignable(c[0])
                 self.check(n, expected, actual)

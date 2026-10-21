@@ -176,3 +176,7 @@ cython_debug/
 # Keep gscript module examples (the Python lib/ rule above otherwise ignores these).
 !examples/modules/lib/
 !examples/modules/lib/*.gos
+
+# Compiler development tools and native build intermediates
+node_modules/
+*.spec

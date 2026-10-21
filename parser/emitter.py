@@ -2,7 +2,7 @@
 import json
 import re
 
-from .checker import unwrap
+from .checker import unwrap, Type, Checker
 from .syntax import decode_string
 
 
@@ -21,7 +21,9 @@ def zero(typ):
 
 
 class Emitter:
-    def __init__(self):
+    def __init__(self, format='mjs', checker=None):
+        self.format = format
+        self.checker = checker
         self.methods = {}
         self.used_names = set()
         self.counter = 0
@@ -37,6 +39,41 @@ class Emitter:
         nodes = sorted(program.children, key=lambda n: order.get(unwrap(n).kind, 3))
         return '\n\n'.join(filter(None, (self.statement(node) for node in nodes))) + '\n'
 
+    def ts_type(self, typ):
+        if typ.kind in ('any', 'pending', 'namespace'):
+            return 'any'
+        if typ.kind == 'bool':
+            return 'boolean'
+        if typ.kind in ('number', 'string', 'void', 'null'):
+            return typ.kind
+        if typ.kind == 'array':
+            return 'Array<' + self.ts_type(typ.args[0]) + '>'
+        if typ.kind == 'promise':
+            return 'Promise<' + self.ts_type(typ.args[0]) + '>'
+        if typ.kind in ('struct', 'constructor'):
+            names = [name for name, key in self.checker.type_names.items() if key == typ.name]
+            if not names:
+                # A non-exported nominal type may appear in an imported function's
+                # result; inline its public field shape instead of inventing a name.
+                fields = self.checker.structs[typ.name].fields
+                return '{' + '; '.join(json.dumps(k) + ': ' + self.ts_type(t) for k, t in fields.items()) + '}'
+            return ('typeof ' if typ.kind == 'constructor' else '') + names[0]
+        if typ.kind == 'function':
+            params = ', '.join(f'arg{i}: {self.ts_type(t)}' for i, t in enumerate(typ.args[:-1]))
+            return '(' + params + ') => ' + self.ts_type(typ.args[-1])
+        if typ.kind == 'record':
+            return '{' + '; '.join(json.dumps(k) + ': ' + self.ts_type(t) for k, t in typ.fields) + '}'
+        if typ.kind == 'object':
+            return 'Record<string, any>'
+        return 'any'
+
+    def annotation(self, node, type_name):
+        return self.ts_type(self.checker.declared_type(node, type_name))
+
+    def default(self, typ):
+        value = zero(typ)
+        return value + '!' if value == 'null' and self.format == 'ts' else value
+
     def fresh(self):
         while True:
             name = f'__gscript{self.counter}'
@@ -50,13 +87,17 @@ class Emitter:
         return '{\n' + indent(body) + '\n}'
 
     def function(self, node, anonymous=False, method=False):
-        name, params, _, asynchronous, receiver = node.value
+        name, params, result, asynchronous, receiver = node.value
         prefix = 'async ' if asynchronous else ''
-        names = ', '.join(name for name, _ in params)
+        names = ', '.join(name + (': ' + self.annotation(node, typ) if self.format == 'ts' else '') for name, typ in params)
+        returns = ''
+        if self.format == 'ts':
+            result_type = self.annotation(node, result)
+            returns = ': ' + (f'Promise<{result_type}>' if asynchronous else result_type)
         body = self.block(node.children, f'const {receiver[0]} = this;' if receiver else '')
         if anonymous:
-            return f'({prefix}({names}) => {body})'
-        return f'{prefix}{"" if method else "function "}{name}({names}) {body}'
+            return f'({prefix}({names}){returns} => {body})'
+        return f'{prefix}{"" if method else "function "}{name}({names}){returns} {body}'
 
     def expr(self, node):
         k, v, c = node.kind, node.value, node.children
@@ -65,6 +106,8 @@ class Emitter:
         if k == 'number':
             return re.sub(r'^0+(?=\d)', '', v)
         if k == 'name':
+            if self.format == 'ts' and v in ('nil', 'null'):
+                return 'null!'
             return 'console.log' if getattr(node, 'builtin', False) else {'nil': 'null'}.get(v, v)
         if k == 'array':
             return '[' + ', '.join(self.expr(child) for child in c) + ']'
@@ -102,8 +145,9 @@ class Emitter:
         k, v, c = node.kind, node.value, node.children
         if k == 'decl':
             kind, name, typ = v
-            value = self.expr(c[0]) if c[0] else zero(typ)
-            return f'{"const" if kind == "const" else "let"} {name} = {value}'
+            value = self.expr(c[0]) if c[0] else self.default(typ)
+            annotation = ': ' + self.annotation(node, typ) if self.format == 'ts' and typ else ''
+            return f'{"const" if kind == "const" else "let"} {name}{annotation} = {value}'
         if k == 'assign':
             if v == ':=':
                 return f'let {c[0].value} = {self.expr(c[1])}'
@@ -114,6 +158,8 @@ class Emitter:
 
     def statement(self, node):
         k, v, c = node.kind, node.value, node.children
+        if k == 'default':
+            return 'export default ' + self.expr(c[0]) + ';'
         if k == 'export':
             return 'export ' + self.statement(c[0])
         if k in ('decl', 'assign', 'update', 'expr'):
@@ -129,16 +175,17 @@ class Emitter:
             # Unnamed destructuring avoids collision between a source field or method
             # and compiler-generated constructor parameters or local bindings.
             local_names = [self.fresh() for _ in fields]
-            params = ', '.join(f'{json.dumps(name)}: {local_names[i]} = {self.expr(default) if default else zero(typ)}'
+            params = ', '.join(f'{json.dumps(name)}: {local_names[i]} = {self.expr(default) if default else self.default(typ)}'
                                for i, (name, typ, default) in enumerate(fields))
-            lines = [f'constructor({{{params}}} = {{}}) {{']
+            annotation = f': Partial<{name}>' if self.format == 'ts' else ''
+            lines = [f'constructor({{{params}}}{annotation} = {{}}) {{']
             for i, (field_name, _, _) in enumerate(fields):
                 key = json.dumps(field_name)
                 # Class field declarations safely define __proto__ and shadow inherited accessors.
                 lines.append(f'  this[{key}] = {local_names[i]};')
             lines.append('}')
             # Own class fields ensure assignment cannot invoke __proto__'s setter.
-            declarations = [f'[{json.dumps(field_name)}];' for field_name, _, _ in fields]
+            declarations = [f'[{json.dumps(field_name)}]' + (': ' + self.annotation(node, typ) if self.format == 'ts' else '') + ';' for field_name, typ, _ in fields]
             methods = [self.function(method, method=True) for method in self.methods.get(name, [])]
             return f'class {name} {{\n' + indent('\n'.join([*declarations, '\n'.join(lines), *methods])) + '\n}'
         if k == 'return':
@@ -163,5 +210,5 @@ class Emitter:
             step = self.simple(c[2]) if c[2] else ''
             return f'for ({init}; {cond}; {step}) {self.block(c[3])}'
         if k == 'try':
-            return f'try {self.block(c[0])} catch ({v}) {self.block(c[1])}'
+            return f'try {self.block(c[0])} catch ({v}{": any" if self.format == "ts" else ""}) {self.block(c[1])}'
         raise AssertionError(f'unhandled checked statement: {k}')

@@ -199,7 +199,7 @@ console.log(globalThis.JSON.stringify({ok: true}))
             ('if true { import "node:fs" }', 'module scope'),
             ('if true { type P struct {} }', 'module scope'),
             ('type P struct { X string = await fetch("data:,x") }', 'async'),
-            ('type P struct {}\np := new P()', 'struct literal'),
+            ('type P struct {}\np := new P(1)', 'field object'),
             ('new NotDefined()', 'undefined name'),
             ('var eval int = 1', 'reserved'),
             (r'console.log("\01")', 'octal'),
@@ -319,7 +319,7 @@ console.log(label, twice(21), p.Greet())
             self.assertIn('line 2:13', result.stderr)
             self.assertIn('console.log(@)', result.stderr)
             self.assertIn('^', result.stderr)
-        self.assertEqual(self.cli('--version').stdout, 'gscript 0.2.0\n')
+        self.assertEqual(self.cli('--version').stdout, 'gscript 0.3.0\n')
 
 
 if __name__ == '__main__':

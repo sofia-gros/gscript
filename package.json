@@ -1,0 +1,9 @@
+{
+  "name": "gscript-compiler-tests",
+  "private": true,
+  "description": "Tools used to test the compiler's generated TypeScript",
+  "devDependencies": {
+    "@types/node": "22.18.6",
+    "typescript": "5.9.3"
+  }
+}
