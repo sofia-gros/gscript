@@ -25,7 +25,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: python -m pip install .
-      - run: python -m unittest discover -s tests -v
+      - run: python scripts/ci_command.py python -m unittest discover -s tests -v
       - name: Boot Phaser in Chromium
         if: runner.os == 'Linux'
         run: python scripts/test_phaser_browser.py
@@ -81,8 +81,8 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: python -m pip install -r requirements-build.txt
-      - run: python -m unittest discover -s tests -v
-      - run: python scripts/build_release.py --native --output release-assets
+      - run: python scripts/ci_command.py python -m unittest discover -s tests -v
+      - run: python scripts/ci_command.py python scripts/build_release.py --native --output release-assets
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.os }}
