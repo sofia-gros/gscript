@@ -26,6 +26,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: python -m pip install .
       - run: python -m unittest discover -s tests -v
+      - name: Boot Phaser in Chromium
+        if: runner.os == 'Linux'
+        run: python scripts/test_phaser_browser.py
       - name: Check release version
         if: startsWith(github.ref, 'refs/tags/')
         run: python scripts/check_version.py "${{ github.ref_name }}"
@@ -46,7 +49,7 @@ jobs:
       - run: python -m build --no-isolation --outdir release-assets
       - run: python scripts/build_release.py --zipapp --output release-assets
       - name: Test zipapp
-        run: python scripts/smoke_compiler.py release-assets/gs-v0.3.0.pyz
+        run: python scripts/smoke_compiler.py release-assets/*.pyz
       - name: Test installed wheel outside checkout
         run: |
           python -m venv /tmp/gs-installed

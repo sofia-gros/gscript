@@ -1,5 +1,6 @@
 """Build a Python zipapp and/or the native compiler for the current machine."""
 import argparse
+import os
 from pathlib import Path
 import platform
 import shutil
@@ -30,6 +31,7 @@ def build_native(output):
     build = ROOT / 'build/native'
     subprocess.run([sys.executable, '-m', 'PyInstaller', '--clean', '--noconfirm',
                     '--onefile', '--name', 'gs', '--paths', str(ROOT),
+                    '--add-data', str(ROOT / 'gscript/typescript_bridge.cjs') + os.pathsep + 'gscript',
                     '--distpath', str(build / 'bin'), '--workpath', str(build / 'work'),
                     '--specpath', str(build), str(ROOT / 'scripts/compiler_entry.py')], check=True)
     executable = build / 'bin' / ('gs.exe' if sys.platform == 'win32' else 'gs')

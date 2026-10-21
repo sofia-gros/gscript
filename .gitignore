@@ -180,3 +180,6 @@ cython_debug/
 # Compiler development tools and native build intermediates
 node_modules/
 *.spec
+
+# Content-validated external type-checking cache
+.gs-cache/

@@ -40,6 +40,22 @@ def main():
             result = run(['node', str(entry)], cwd=root)
             if result.stdout != expected:
                 raise AssertionError(result.stdout)
+        # Verify bundled bridge resources and existing project node_modules.
+        run([*compiler, str(ROOT / 'tests/fixtures/interop/phaser.gs'), '--check'], cwd=root, env=environment)
+        for format in ('js', 'mjs', 'ts'):
+            external_output = root / ('external-' + format)
+            run([*compiler, str(ROOT / 'tests/fixtures/interop/external-main.gs'), '--format', format,
+                 '--out-dir', str(external_output)], cwd=root, env=environment)
+            external_entry = external_output / ('external-main.' + format)
+            if format == 'ts':
+                run(['node', str(ROOT / 'node_modules/typescript/bin/tsc'), str(external_entry),
+                     '--strict', '--target', 'ES2022', '--module', 'NodeNext',
+                     '--moduleResolution', 'NodeNext', '--outDir', str(root / 'external-js')], cwd=root)
+                (root / 'external-js/package.json').write_text('{"type":"module"}')
+                external_entry = root / 'external-js/external-main.js'
+            result = run(['node', str(external_entry)], cwd=root)
+            if result.stdout != '7\n':
+                raise AssertionError(result.stdout)
         bad = root / 'bad.gs'
         target = root / 'existing.mjs'
         target.write_text('unchanged')

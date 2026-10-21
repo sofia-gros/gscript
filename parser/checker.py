@@ -27,6 +27,13 @@ class Type:
 
 
 ANY = Type('any')
+EXTERNAL = Type('external')
+
+def is_external(typ):
+    return typ is not None and typ.kind in ('external', 'external_type')
+
+def is_dynamic(typ):
+    return typ == ANY or is_external(typ)
 NUMBER = Type('number')
 STRING = Type('string')
 BOOL = Type('bool')
@@ -205,10 +212,16 @@ class Checker:
             return primitive[name]
         if name in self.type_names:
             return Type('struct', self.type_names[name])
+        root = name.split('.')[0]
+        for scope in reversed(self.scopes):
+            if root in scope:
+                if is_external(scope[root].typ):
+                    return Type('external_type', name)
+                break
         self.fail(node, f'unknown type: {name}')
 
     def compatible(self, expected, actual):
-        if ANY in (expected, actual) or expected == actual:
+        if is_dynamic(expected) or is_dynamic(actual) or expected == actual:
             return True
         if actual == NULL:
             return expected.kind in ('object', 'record', 'array', 'struct', 'function', 'promise')
@@ -300,7 +313,10 @@ class Checker:
         self.declare_signatures(nodes, module)
 
     def run(self, program):
-        self.used_names.update(re.findall(r'[A-Za-z_$][A-Za-z0-9_$]*', repr(program)))
+        names = getattr(program, 'identifiers', None)
+        if names is None:
+            names = re.findall(r'[A-Za-z_$][A-Za-z0-9_$]*', repr(program))
+        self.used_names.update(names)
         self.statements(program.children, module=True)
         return self.types
 
@@ -387,6 +403,8 @@ class Checker:
         return typ
 
     def property(self, n, base, key):
+        if is_external(base):
+            return EXTERNAL
         if base.kind == 'namespace':
             exports = self.module_exports[base.name]
             if key not in exports:
@@ -462,13 +480,14 @@ class Checker:
             for item in c:
                 typ = self.expr(item)
                 if item.kind == 'spread':
-                    if typ != ANY and typ.kind != 'array':
+                    if not is_dynamic(typ) and typ.kind != 'array':
                         self.fail(item, 'array spread requires an array')
-                    typ = typ.args[0] if typ.kind == 'array' else ANY
+                    typ = typ.args[0] if typ.kind == 'array' else typ
                 self.check(item, element, typ)
             return array(element)
         if k in ('object', 'composite'):
             fields, seen, dynamic = {}, set(), False
+            external_spread = False
             target = None
             if k == 'composite':
                 try:
@@ -483,7 +502,9 @@ class Checker:
             for item in c:
                 typ = self.expr(item.children[0])
                 if item.kind == 'spread':
-                    if typ == ANY or typ == OBJECT:
+                    if is_external(typ):
+                        external_spread = True
+                    elif typ == ANY or typ == OBJECT:
                         dynamic = True
                     elif typ.kind == 'record':
                         fields.update(dict(typ.fields))
@@ -505,7 +526,7 @@ class Checker:
                         self.fail(n, f'unknown field {key} on {v}')
                     self.check(n, target[key], typ)
                 return Type('struct', struct_key)
-            return OBJECT if dynamic else Type('record', fields=tuple(fields.items()))
+            return OBJECT if dynamic else EXTERNAL if external_spread else Type('record', fields=tuple(fields.items()))
         if k == 'spread':
             return self.expr(c[0])
         if k == 'member':
@@ -515,6 +536,8 @@ class Checker:
             if base.kind == 'array' or base == STRING:
                 self.check(n, NUMBER, index)
                 return base.args[0] if base.kind == 'array' else STRING
+            if is_external(base):
+                return EXTERNAL
             if base in (ANY, OBJECT):
                 return ANY
             if base.kind == 'record':
@@ -533,15 +556,17 @@ class Checker:
                     self.fail(n, f'cannot compare {lt} and {rt}')
                 return BOOL
             if v in ('<', '>', '<=', '>='):
-                if lt not in (ANY, NUMBER, STRING) or rt not in (ANY, NUMBER, STRING):
+                if (not is_dynamic(lt) and lt not in (NUMBER, STRING)) or (not is_dynamic(rt) and rt not in (NUMBER, STRING)):
                     self.fail(n, f'operator {v} requires numbers or strings')
                 self.check(n, lt, rt)
                 return BOOL
             if v == '+' and lt == rt == STRING:
                 return STRING
-            if lt not in (ANY, NUMBER) or rt not in (ANY, NUMBER):
+            if v == '+' and (is_external(lt) or is_external(rt)) and (is_dynamic(lt) or lt in (STRING, NUMBER)) and (is_dynamic(rt) or rt in (STRING, NUMBER)):
+                return EXTERNAL
+            if (not is_dynamic(lt) and lt != NUMBER) or (not is_dynamic(rt) and rt != NUMBER):
                 self.fail(n, f'operator {v} requires matching numeric operands (or strings for +)')
-            return ANY if ANY in (lt, rt) else NUMBER
+            return EXTERNAL if is_external(lt) or is_external(rt) else ANY if ANY in (lt, rt) else NUMBER
         if k == 'unary':
             typ = self.expr(c[0])
             if v == 'await':
@@ -576,17 +601,17 @@ class Checker:
                             self.fail(n, f'unknown field {key} on {constructor.name.rsplit("::", 1)[-1]}')
                         self.check(n, fields[key], typ)
                 return Type('struct', constructor.name)
-            if constructor != ANY:
+            if not is_dynamic(constructor):
                 self.fail(n, f'{v} is not a JavaScript constructor')
-            return ANY
+            return EXTERNAL if is_external(constructor) else ANY
         if k == 'call':
             callee = self.expr(c[0])
             args = [self.expr(arg) for arg in c[1:]]
             for arg, typ in zip(c[1:], args):
-                if arg.kind == 'spread' and typ not in (ANY, STRING) and typ.kind != 'array':
+                if arg.kind == 'spread' and not is_dynamic(typ) and typ != STRING and typ.kind != 'array':
                     self.fail(arg, 'spread argument must be iterable')
-            if callee == ANY:
-                return ANY
+            if is_dynamic(callee):
+                return EXTERNAL if is_external(callee) else ANY
             if callee.kind == 'array_method':
                 return self.array_call(n, callee, args)
             if callee.kind != 'function':
@@ -610,8 +635,9 @@ class Checker:
         if len(args) != 1:
             self.fail(node, 'array callback method requires one callback')
         callback = args[0]
-        if callback == ANY:
-            return array(ANY) if method.name == 'map' else ANY
+        if is_dynamic(callback):
+            dynamic_type = EXTERNAL if is_external(callback) else ANY
+            return array(dynamic_type) if method.name == 'map' else dynamic_type
         if callback.kind != 'function':
             self.fail(node, 'array callback must be a function')
         params, result = callback.args[:-1], callback.args[-1]
@@ -670,7 +696,7 @@ class Checker:
             else:
                 expected = self.assignable(c[0])
                 self.check(n, expected, actual)
-                if v in ('+=', '-=') and expected not in (ANY, NUMBER) and not (v == '+=' and expected == STRING):
+                if v in ('+=', '-=') and not is_dynamic(expected) and expected != NUMBER and not (v == '+=' and expected == STRING):
                     self.fail(n, f'operator {v} cannot be used with {expected}')
         elif k == 'update':
             self.check(n, NUMBER, self.assignable(c[0]))
@@ -699,11 +725,11 @@ class Checker:
                 try:
                     if k == 'range':
                         collection = self.expr(c[0])
-                        if collection != ANY and collection.kind != 'array':
+                        if not is_dynamic(collection) and collection.kind != 'array':
                             self.fail(n, 'range currently supports arrays only')
                         self.bind(n, v[0], NUMBER)
                         if len(v) == 2:
-                            self.bind(n, v[1], collection.args[0] if collection.kind == 'array' else ANY)
+                            self.bind(n, v[1], collection.args[0] if collection.kind == 'array' else collection)
                         body = c[1]
                     else:
                         if c[0]:

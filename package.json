@@ -4,6 +4,7 @@
   "description": "Tools used to test the compiler's generated TypeScript",
   "devDependencies": {
     "@types/node": "22.18.6",
+    "phaser": "3.90.0",
     "typescript": "5.9.3"
   }
 }

@@ -44,8 +44,8 @@ GS は独自の言語です。Go のランタイムを移植するものでは�
 
 - Linux / macOS：展開した `gs` を実行。必要なら `chmod +x gs`。
 - Windows：展開した `gs.exe` を実行。
-- Python 版：Python 3.12 以上で `python gs-v0.3.0.pyz --version`。
-- Python パッケージ：wheel をダウンロードし、`python -m pip install ./gscript_lang-0.3.0-py3-none-any.whl`。
+- Python 版：Python 3.12 以上で `python gs-v0.4.0.pyz --version`。
+- Python パッケージ：wheel をダウンロードし、`python -m pip install ./gscript_lang-0.4.0-py3-none-any.whl`。
 
 単体実行ファイルには Python を同梱しているため、Python の別途インストールは不要です。各配布物の SHA-256 は Release の `SHA256SUMS` で確認できます。ネイティブ版の実行基盤は、Linux が Ubuntu 22.04 以降、macOS が 14 以降、Windows が Windows Server 2022 / Windows 11 系です。CPU はファイル名に記載します。別の基盤では Python 版を利用してください。
 
@@ -54,7 +54,7 @@ GS は独自の言語です。Go のランタイムを移植するものでは�
 ### チェックアウトから使う
 
 ```sh
-# Python 3.12 以上。コンパイラ自体の実行時依存パッケージはありません。
+# Python 3.12 以上。GS 単独のコンパイルには Node / TypeScript は不要です。
 python -m pip install .
 gs examples/hello.gs --format mjs -o build/hello.mjs
 node build/hello.mjs
@@ -107,7 +107,7 @@ gs hello.gs --check
 
 構文エラー、未定義名、重複宣言、型の不一致、引数の個数、存在しないプロパティ・export、const の再代入、戻り値の漏れなどを検査します。失敗時はファイル・位置・ソース行を表示し、終了コード `1` を返します。引数の誤りは `2` です。型エラーがある場合、生成物を書き換えません。
 
-GS 同士のモジュールでは型情報を共有します。JS の import と `any` は動的な値として扱います。`any` を使っても未定義名の検査は無効になりません。
+GS 同士のモジュールでは型情報を共有します。外部 JS / TS と node_modules は TypeScript の型情報・JSDoc・推論を使って検査します。明示的な `any` は動的な値として扱います。`any` を使っても未定義名の検査は無効になりません。
 
 ## モジュールを分ける
 
@@ -131,7 +131,20 @@ node dist/main.mjs
 
 相対 GS import をたどり、全ファイルを検査してから出力します。import は選んだ形式に合わせて書き換えます。TS の import は、TypeScript の NodeNext が解決できる `.js` 指定になります。
 
-共有モジュールが入口の親ディレクトリにある場合は `--root .` を指定します。npm・既存 JS の import は保持され、依存パッケージのインストールやバンドルは利用側で行います。
+共有モジュールが入口の親ディレクトリにある場合は `--root .` を指定します。ローカル JS / TS の依存も変換・配置します。npm import は保持され、依存パッケージのインストールやバンドルは利用側で行います。
+
+## 外部 JS / TS と node_modules
+
+```sh
+npm install --save-dev typescript@5.9.3
+npm install phaser@3.90.0
+gs game.gs --check
+gs game.gs --format mjs --out-dir dist
+```
+
+Phaser などの `.d.ts`、ローカル TypeScript、JavaScript の JSDoc を使い、引数・プロパティ・戻り値をコンパイル時に検査します。外部連携には Node.js 22 / 24 と TypeScript 5.9.3 が必要です。型検査キャッシュで再コンパイルを高速化します。
+
+[連携の具体例・出力配置・キャッシュ](docs/interop.md) · [v0.4 公開条件](docs/release-plan-v0.4.md)
 
 ## struct・配列・非同期処理
 
@@ -172,11 +185,11 @@ python -m unittest discover -s tests -v
 
 # 単体実行ファイルと Python zipapp。ビルドした実行ファイルも検証します。
 python scripts/build_release.py --native --zipapp
-python scripts/smoke_compiler.py dist/release/gs-v0.3.0.pyz
+python scripts/smoke_compiler.py dist/release/gs-v0.4.0.pyz
 ```
 
 テストはコンパイラだけでなく、生成した JS / MJS の実行、TS の厳格な型チェックと JS への変換後の実行、インストールしたコンパイラの実行まで確認します。
 
 Release ワークフローは Python 3.12 / 3.13、Node.js 22 / 24、Linux / macOS / Windows で検証します。必須ジョブのどれかが失敗すれば公開しません。コンパイラ、パッケージ、Git タグのバージョンも照合します。
 
-[公開条件](docs/release-plan.md) · [リリースノート](docs/releases/v0.3.0.md) · [ソースコード](https://github.com/sofia-gros/gscript)
+[公開条件](docs/release-plan.md) · [リリースノート](docs/releases/v0.4.0.md) · [ソースコード](https://github.com/sofia-gros/gscript)

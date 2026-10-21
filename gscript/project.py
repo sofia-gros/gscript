@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 
 from parser.compiler import CompileError, parse_code
-from parser.checker import Checker, Symbol, Type, ANY, import_names, unwrap
+from parser.checker import Checker, Symbol, Type, ANY, EXTERNAL, import_names, unwrap
 from parser.emitter import Emitter
 from parser.syntax import decode_string
 
@@ -37,10 +37,16 @@ class Module:
     exports: dict = field(default_factory=dict)
     imports: dict = field(default_factory=dict)
     checker: object = None
+    source_text: str = ''
 
 
 class Project:
-    def __init__(self, entry, root=None):
+    def __init__(self, entry, root=None, format='mjs', cache=True, cache_dir=None, typescript=None):
+        self.format = format
+        self.interop_options = {'cache': cache, 'cache_dir': cache_dir, 'typescript': typescript}
+        self.has_external = False
+        self.external_results = {}
+        self.interop_stats = {}
         self.entry = Path(entry).resolve()
         self.root = Path(root).resolve() if root else self.entry.parent
         self.modules = {}
@@ -60,40 +66,51 @@ class Project:
             raise
 
     def _load(self, source):
-        if not source.is_relative_to(self.root):
-            raise CompileError(f'module is outside project root {self.root}: {source}')
-        if source in self.modules:
-            return
-
-        def load():
-            program = parse_code(source.read_text(encoding='utf-8'))
-            module = Module(source, program)
-            self.modules[source] = module
-            for original in program.children:
-                node = unwrap(original)
-                if original.kind == 'export':
-                    name = node.value[1] if node.kind == 'decl' else node.value[0]
-                    if name in module.exports:
-                        raise CompileError(f'duplicate export: {name}', node.line)
-                    module.exports[name] = Symbol(Type('pending'), category='export', initialized=False)
-                elif node.kind == 'default':
-                    if 'default' in module.exports:
-                        raise CompileError('duplicate default export', node.line)
-                    module.exports['default'] = Symbol(Type('pending'), True, 'export', initialized=False)
-                if node.kind != 'import':
-                    continue
-                path = decode_string(node.value[1])
-                if Path(path).suffix not in SOURCE_SUFFIXES:
-                    continue
-                if not path.startswith(('./', '../')):
-                    raise CompileError('GS imports must be relative paths', node.line)
-                dependency = (source.parent / path).resolve()
-                if not dependency.is_file():
-                    raise CompileError(f'module not found: {path}', node.line)
-                module.imports[id(node)] = dependency
-                self._load(dependency)
-            self.order.append(module)
-        self._located(source, load)
+        # Explicit DFS avoids Python recursion limits on long module chains.
+        stack = [(source, False)]
+        while stack:
+            current, exiting = stack.pop()
+            if exiting:
+                self.order.append(self.modules[current])
+                continue
+            if not current.is_relative_to(self.root):
+                raise CompileError(f'module is outside project root {self.root}: {current}')
+            if current in self.modules:
+                continue
+            def load():
+                text = current.read_text(encoding='utf-8')
+                program = parse_code(text)
+                module = Module(current, program, source_text=text)
+                self.modules[current] = module
+                dependencies = []
+                for original in program.children:
+                    node = unwrap(original)
+                    if original.kind == 'export':
+                        name = node.value[1] if node.kind == 'decl' else node.value[0]
+                        if name in module.exports:
+                            raise CompileError(f'duplicate export: {name}', node.line)
+                        module.exports[name] = Symbol(Type('pending'), category='export', initialized=False)
+                    elif node.kind == 'default':
+                        if 'default' in module.exports:
+                            raise CompileError('duplicate default export', node.line)
+                        module.exports['default'] = Symbol(Type('pending'), True, 'export', initialized=False)
+                    if node.kind != 'import':
+                        continue
+                    path = decode_string(node.value[1])
+                    if Path(path).suffix not in SOURCE_SUFFIXES:
+                        self.has_external = True
+                        continue
+                    if not path.startswith(('./', '../')):
+                        raise CompileError('GS imports must be relative paths', node.line)
+                    dependency = (current.parent / path).resolve()
+                    if not dependency.is_file():
+                        raise CompileError(f'module not found: {path}', node.line)
+                    module.imports[id(node)] = dependency
+                    dependencies.append(dependency)
+                return dependencies
+            dependencies = self._located(current, load)
+            stack.append((current, True))
+            stack.extend((dependency, False) for dependency in reversed(dependencies))
 
     def check(self):
         structs = {}
@@ -136,7 +153,17 @@ class Project:
                     self._located(module.source, lambda: checker.check_function(node))
                 finally:
                     checker.scopes = old_scopes
+        if self.has_external:
+            self._external_result(self.format)
         return self
+
+    def _external_result(self, format):
+        if format not in self.external_results:
+            from .interop import ExternalChecker
+            checker = ExternalChecker(self, format, **self.interop_options)
+            self.external_results[format] = checker.run()
+            self.interop_stats = checker.stats
+        return self.external_results[format]
 
     def _link(self, module):
         checker = module.checker
@@ -146,6 +173,10 @@ class Project:
             dependency = module.imports.get(id(node))
             node.gs_module = dependency is not None
             if dependency is None:
+                node.external_typed = True
+                checker.prepared.add(id(node))
+                for local in import_names(node.value[0]):
+                    checker.bind(node, local, EXTERNAL, True, 'external')
                 continue
             checker.prepared.add(id(node))
             binding = node.value[0]
@@ -174,7 +205,12 @@ class Project:
                         checker.fail(node, f'reserved type name: {local}')
                     checker.type_names[local] = target[exported].typ.name
 
-    def emit(self, module, format='mjs', out_dir=None):
+    def emit(self, module, format='mjs', out_dir=None, checking=False, runtime_format=None):
+        if self.has_external and not checking and runtime_format is None:
+            result = self._external_result(format)
+            generated = result.get('gsFiles', {}).get(str(module.source))
+            if generated is not None:
+                return generated
         # Each invocation restores source specifiers before rewriting; a Project
         # can safely emit multiple output formats without accumulating changes.
         original_values = []
@@ -187,10 +223,12 @@ class Project:
                 original_values.append((node, node.value))
                 relative = os.path.relpath(dependency, module.source.parent)
                 # TypeScript NodeNext resolves .js imports to .ts source files.
-                extension = 'js' if format == 'ts' else format
-                specifier = str(Path(relative).with_suffix('.' + extension)).replace(os.sep, '/')
+                extension = 'mjs' if checking else ('js' if runtime_format == 'ts' else runtime_format) if runtime_format else 'js' if format == 'ts' else format
+                target = Path(relative) if checking else Path(relative).with_suffix('')
+                specifier = str(target) + '.' + extension
+                specifier = specifier.replace(os.sep, '/')
                 node.value = (binding, json.dumps(specifier if specifier.startswith('.') else './' + specifier))
-            return Emitter(format=format, checker=module.checker).compile(module.program)
+            return Emitter(format=format, checker=module.checker, checking=checking).compile(module.program)
         finally:
             for node, value in original_values:
                 node.value = value
@@ -210,10 +248,10 @@ def module_marker(directory):
     return marker
 
 
-def build_project(entry, out_dir, root=None, format='mjs', check_only=False):
+def build_project(entry, out_dir, root=None, format='mjs', check_only=False, cache=True, cache_dir=None, typescript=None):
     if format not in FORMATS:
         raise CompileError(f'unsupported output format: {format}')
-    project = Project(entry, root).check()
+    project = Project(entry, root, format, cache, cache_dir, typescript).check()
     if check_only:
         return None
     out_dir = Path(out_dir).resolve()
@@ -225,6 +263,31 @@ def build_project(entry, out_dir, root=None, format='mjs', check_only=False):
         if output in outputs:
             raise CompileError(f'output path collision: {output}')
         outputs[output] = project.emit(module, format)
+    if project.has_external:
+        external = project._external_result(format)
+        protected = {Path(item['file']).resolve() for item in external.get('dependencies', []) if item.get('readHash')}
+        protected.update(Path(item['source']).resolve() for item in external.get('files', []))
+        protected.update(project.modules)
+        if any(target.resolve() in protected for target in outputs):
+            raise CompileError('build output must not overwrite a source or declaration file')
+        for item in external.get('files', []):
+            source = Path(item['source']).resolve()
+            if not source.is_relative_to(project.root):
+                raise CompileError(f'external source is outside project root: {source}')
+            target = out_dir / source.relative_to(project.root).with_suffix('.' + item['extension'])
+            if target.resolve() in protected:
+                raise CompileError('build output must not overwrite a source file')
+            if target in outputs:
+                raise CompileError(f'output path collision: {target}')
+            outputs[target] = item['code']
+            if item.get('declaration'):
+                declaration = item['declaration']
+                declaration_target = target.with_suffix('.' + declaration['extension'])
+                if declaration_target.resolve() in protected:
+                    raise CompileError('build output must not overwrite a source or declaration file')
+                if declaration_target in outputs:
+                    raise CompileError(f'output path collision: {declaration_target}')
+                outputs[declaration_target] = declaration['code']
     if format in ('js', 'ts'):
         marker = module_marker(out_dir)
         if marker:

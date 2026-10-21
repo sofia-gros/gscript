@@ -2,7 +2,7 @@
 import json
 import re
 
-from .checker import unwrap, Type, Checker, ANY
+from .checker import unwrap, Type, Checker, ANY, EXTERNAL, is_external
 from .syntax import decode_string
 
 
@@ -21,7 +21,9 @@ def zero(typ):
 
 
 class Emitter:
-    def __init__(self, format='mjs', checker=None):
+    def __init__(self, format='mjs', checker=None, checking=False):
+        self.checking = checking
+        self.helpers = []
         self.format = format
         self.checker = checker
         self.methods = {}
@@ -29,7 +31,8 @@ class Emitter:
         self.counter = 0
 
     def compile(self, program):
-        self.used_names = set(re.findall(r"[A-Za-z_$][\w$]*", repr(program)))
+        names = getattr(program, 'identifiers', None)
+        self.used_names = set(names if names is not None else re.findall(r'[A-Za-z_$][\w$]*', repr(program)))
         for original in program.children:
             node = unwrap(original)
             if node.kind == 'func' and node.value[4]:
@@ -37,10 +40,13 @@ class Emitter:
         # Type and function declarations are hoisted, as in the source language.
         order = {'import': 0, 'struct': 1, 'func': 2}
         nodes = sorted(program.children, key=lambda n: order.get(unwrap(n).kind, 3))
-        return '\n\n'.join(filter(None, (self.statement(node) for node in nodes))) + '\n'
+        body = '\n\n'.join(filter(None, (self.statement(node) for node in nodes))) + '\n'
+        return '\n'.join(self.helpers) + '\n' + body if self.helpers else body
 
     def ts_type(self, typ):
-        if typ.kind in ('any', 'pending', 'namespace'):
+        if typ.kind == 'external_type':
+            return typ.name
+        if typ.kind in ('any', 'pending', 'namespace', 'external'):
             return 'any'
         if typ.kind == 'bool':
             return 'boolean'
@@ -107,6 +113,8 @@ class Emitter:
         code = self.expression(node)
         if self.format == 'ts' and node.kind in ('name', 'member', 'index') and self.checker.types.get(id(node)) == ANY:
             return '(' + code + ' as any)'
+        if self.checking and node.kind != 'spread':
+            return f'(/*__GS_LINE_{node.line}__*/ {code})'
         return code
 
     def expression(self, node):
@@ -120,7 +128,10 @@ class Emitter:
                 return 'null!'
             return 'console.log' if getattr(node, 'builtin', False) else {'nil': 'null'}.get(v, getattr(node, 'resolved_name', v))
         if k == 'array':
-            return '[' + ', '.join(self.expr(child) for child in c) + ']'
+            code = '[' + ', '.join(self.expr(child) for child in c) + ']'
+            if self.format == 'ts':
+                code = '(' + code + ' satisfies globalThis.Array<' + self.annotation(node, v) + '>)'
+            return code
         if k in ('object', 'composite'):
             parts = []
             for item in c:
@@ -138,9 +149,29 @@ class Emitter:
             return f'({self.expr(c[0])})[{self.expr(c[1])}]'
         if k == 'binary':
             op = {'==': '===', '!=': '!=='}.get(v, v)
-            return f'({self.expr(c[0])} {op} {self.expr(c[1])})'
+            left, right = self.expr(c[0]), self.expr(c[1])
+            lt, rt = [self.checker.types.get(id(child)) for child in c]
+            if self.checking and (is_external(lt) or is_external(rt)):
+                if v == '+' and ANY not in (lt, rt):
+                    helper = self.fresh()
+                    self.helpers += [f'declare function {helper}(a: number, b: number): number;',
+                                     f'declare function {helper}(a: string, b: string): string;']
+                    return f'{helper}({left}, {right})'
+                if v in ('<', '>', '<=', '>=') and ANY not in (lt, rt):
+                    helper = self.fresh()
+                    self.helpers += [f'declare function {helper}(a: number, b: number): boolean;',
+                                     f'declare function {helper}(a: string, b: string): boolean;']
+                    return f'{helper}({left}, {right})'
+                if v in ('&&', '||', '-', '*', '/', '%'):
+                    required = 'boolean' if v in ('&&', '||') else 'number'
+                    if is_external(lt): left = f'({left} satisfies {required})'
+                    if is_external(rt): right = f'({right} satisfies {required})'
+            return f'({left} {op} {right})'
         if k == 'unary':
-            return f'({v}{" " if v == "await" else ""}{self.expr(c[0])})'
+            child = self.expr(c[0])
+            if self.checking and v != 'await' and is_external(self.checker.types.get(id(c[0]))):
+                child = f'({child} satisfies {"boolean" if v == "!" else "number"})'
+            return f'({v}{" " if v == "await" else ""}{child})'
         if k == 'call':
             return f'({self.expr(c[0])})({", ".join(self.expr(arg) for arg in c[1:])})'
         if k == 'new':
@@ -170,6 +201,10 @@ class Emitter:
         return self.expr(c[0])
 
     def statement(self, node):
+        code = self.statement_code(node)
+        return f'/*__GS_LINE_{node.line}__*/\n' + code if self.checking and code else code
+
+    def statement_code(self, node):
         k, v, c = node.kind, node.value, node.children
         if k == 'default':
             return 'export default ' + self.expr(c[0]) + ';'
@@ -186,7 +221,7 @@ class Emitter:
             binding, path = v
             path = json.dumps(decode_string(path))
             code = f'import {path};' if binding is None else f'import {binding} from {path};'
-            if self.format == 'ts' and not getattr(node, 'gs_module', False):
+            if self.format == 'ts' and not getattr(node, 'gs_module', False) and not getattr(node, 'external_typed', False):
                 code = '// @ts-ignore -- external JavaScript is a GS any boundary.\n' + code
             return code
         if k == 'func':
@@ -216,10 +251,15 @@ class Emitter:
         if k in ('break', 'continue'):
             return k + ';'
         if k == 'if':
-            result = f'if ({self.expr(c[0])}) {self.block(c[1])}'
+            condition = self.expr(c[0])
+            if self.checking and is_external(self.checker.types.get(id(c[0]))):
+                condition = f'({condition} satisfies boolean)'
+            result = f'if ({condition}) {self.block(c[1])}'
             return result + (' else ' + self.block(c[2]) if c[2] is not None else '')
         if k == 'range':
             expr = self.expr(c[0])
+            if self.checking and is_external(self.checker.types.get(id(c[0]))):
+                expr = f'({expr} satisfies globalThis.ReadonlyArray<unknown>)'
             if len(v) == 2:
                 header = f'let [{self.binding(node, v[0])}, {self.binding(node, v[1])}] of ({expr}).entries()'
             else:
@@ -228,6 +268,8 @@ class Emitter:
         if k == 'for':
             init = self.simple(c[0]) if c[0] else ''
             cond = self.expr(c[1]) if c[1] else 'true'
+            if self.checking and c[1] and is_external(self.checker.types.get(id(c[1]))):
+                cond = f'({cond} satisfies boolean)'
             step = self.simple(c[2]) if c[2] else ''
             return f'for ({init}; {cond}; {step}) {self.block(c[3])}'
         if k == 'try':

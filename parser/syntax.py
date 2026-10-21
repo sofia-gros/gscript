@@ -462,6 +462,8 @@ class Parser:
 def parse_code(source):
     try:
         parser = Parser(source)
-        return Node('program', children=parser.program())
+        program = Node('program', children=parser.program())
+        program.identifiers = frozenset(token.text for token in parser.tokens if token.kind == 'name')
+        return program
     except RecursionError as error:
         raise CompileError('source nesting exceeds compiler capacity') from error

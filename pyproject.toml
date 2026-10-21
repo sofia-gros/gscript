@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gscript-lang"
-version = "0.3.0"
+version = "0.4.0"
 description = "Go-inspired syntax compiled to JavaScript ES modules"
 readme = "readme.md"
 requires-python = ">=3.12"
@@ -16,3 +16,6 @@ gscript = "gscript.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["gscript*", "parser*"]
+
+[tool.setuptools.package-data]
+gscript = ["*.cjs"]

@@ -22,5 +22,8 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: python -m pip install .
       - run: python -m unittest discover -s tests -v
+      - name: Boot Phaser in Chromium
+        if: runner.os == 'Linux'
+        run: python scripts/test_phaser_browser.py
       - run: gs examples/hello.gs --format js -o build/hello.js
       - run: node build/hello.js
