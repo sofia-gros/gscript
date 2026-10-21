@@ -233,6 +233,17 @@ class ExtensionTests(unittest.TestCase):
             with self.assertRaises(CompileError):build_project(entry,target.parent,strict_null=True)
             self.assertEqual(target.read_text(),'preserve')
 
+    def test_strict_null_checks_implicit_field_initialization(self):
+        valid=['type A struct { Name string }\ntype B struct { Item A }\nnew B({Item: A{}})',
+               'type A struct {}\ntype B struct { Item A }\nfunc (b B) constructor() { b.Item = A{} }\nnew B()']
+        invalid=['type A struct {}\ntype B struct { Item A }\nB{}',
+                 'type A struct {}\ntype B struct { Item A }\nfunc (b B) constructor() {}',
+                 'type A struct {}\ntype B struct { Item A }\nfunc (b B) constructor() { console.log(b.Item); b.Item = A{} }']
+        for source in valid:compile_source(source,strict_null=True)
+        for source in invalid:
+            with self.subTest(source=source):
+                with self.assertRaises(CompileError):compile_source(source,strict_null=True)
+
     def test_cross_module_interfaces_aliases_and_inheritance(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)

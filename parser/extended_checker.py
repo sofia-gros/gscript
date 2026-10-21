@@ -484,11 +484,58 @@ class ExtendedChecker(Checker):
                         if declared==VOID:self.fail(node,'parameters cannot be void')
                         self.bind(node,param,declared)
                     self.statements(node.children)
+                    if self.in_constructor and self.strict_null:self.validate_initialization(node,receiver[0])
                     if self.return_type != VOID and not self.terminates(node.children): self.fail(node,'missing return on some paths')
             self.seen_functions.add(id(node))
         finally:
             self.current_class,self.in_constructor,self.return_type,self.async_context,self.loop_depth = old
         return self.signature(node)
+
+    def required_fields(self,typ):
+        target=self.structs[typ.name]
+        fields=self.struct_fields(typ)
+        defaults={name for name,_,value in target.node.value[1] if value is not None}
+        return {name for name,t in target.fields.items() if name not in defaults and not self.compatible(fields[name],self.zero_type(fields[name]))}
+
+    def validate_initialization(self,node,receiver):
+        target=self.structs[self.current_class]
+        arguments=tuple(self.generic_context[p] for p,_ in target.parameters)
+        required=self.required_fields(Type('struct',self.current_class,arguments))
+        def reads(n,initialized):
+            if n.kind in ('lambda','func'):return
+            if n.kind=='member' and n.children[0].kind=='name' and n.children[0].value==receiver and n.value in required-initialized:self.fail(n,'field used before initialization: '+n.value)
+            for child in n.children:
+                if hasattr(child,'kind'):reads(child,initialized)
+        def block(nodes,initialized):
+            initialized=set(initialized)
+            for n in nodes:
+                if n.kind=='assign' and n.children[0].kind=='member' and n.children[0].children[0].kind=='name' and n.children[0].children[0].value==receiver:
+                    reads(n.children[1],initialized)
+                    if n.value!='=':reads(n.children[0],initialized)
+                    initialized.add(n.children[0].value)
+                elif n.kind=='if':
+                    reads(n.children[0],initialized)
+                    left=block(n.children[1],initialized)
+                    right=block(n.children[2],initialized) if n.children[2] is not None else initialized
+                    initialized=left & right
+                elif n.kind in ('for','range'):
+                    body=n.children[3] if n.kind=='for' else n.children[1]
+                    for child in n.children[:-1]:
+                        if hasattr(child,'kind'):reads(child,initialized)
+                    block(body,initialized)
+                elif n.kind=='try':initialized=block(n.children[0],initialized)&block(n.children[1],initialized)
+                elif n.kind=='switch':
+                    reads(n.children[0],initialized)
+                    branches=[block(case.children,initialized) for case in n.children[1:]]
+                    if not getattr(n,'exhaustive',False):branches.append(initialized)
+                    if branches:initialized=set.intersection(*branches)
+                elif n.kind=='throw':return required
+                elif n.kind=='return':
+                    if required-initialized:self.fail(n,'constructor leaves fields uninitialized: '+', '.join(sorted(required-initialized)))
+                else:reads(n,initialized)
+            return initialized
+        missing=required-block(node.children,set())
+        if missing:self.fail(node,'constructor leaves fields uninitialized: '+', '.join(sorted(missing)))
 
     def is_super_call(self,n):
         return n.kind == 'expr' and n.children[0].kind == 'call' and n.children[0].children[0].kind == 'name' and n.children[0].children[0].value == 'super'
@@ -723,6 +770,9 @@ class ExtendedChecker(Checker):
                     if k == 'new' and len(c)>1 or supplied.kind != 'record': self.fail(n,'struct constructor requires one field object')
                     fields = self.struct_fields(Type('struct',sig.name,sig.args)) if sig and sig.kind=='default_constructor' else self.struct_fields(typ)
                     raw_fields=self.structs[sig.name].fields if sig and sig.kind=='default_constructor' else target.fields
+                    if self.strict_null:
+                        for field in self.required_fields(typ):
+                            if target.base or field not in dict(supplied.fields):self.fail(n,'field requires an initializer or constructor: '+field)
                     for field,raw in raw_fields.items():
                         if raw.kind=='param' and field not in dict(supplied.fields) and not self.compatible(fields[field],NULL):self.fail(n,'generic field requires an initializer: '+field)
                     if k=='composite':
