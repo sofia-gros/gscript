@@ -1,0 +1,19 @@
+id = "gscript"
+name = "GS / gscript"
+description = "GS syntax highlighting and native compiler language server."
+version = "0.4.0"
+schema_version = 1
+authors = ["sofia-gros"]
+repository = "https://github.com/sofia-gros/gscript"
+
+[language_servers.gs-lsp]
+name = "GS Language Server"
+languages = ["GS"]
+
+[language_servers.gs-lsp.language_ids]
+GS = "gscript"
+
+[grammars.gs]
+repository = "https://github.com/sofia-gros/gscript"
+rev = "bf9b33d59ea526817dfe508fd515c1b43ff599eb"
+path = "editors/tree-sitter-gs"

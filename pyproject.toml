@@ -12,6 +12,7 @@ dependencies = []
 
 [project.scripts]
 gs = "gscript.cli:main"
+gs-lsp = "gscript.lsp:main"
 gscript = "gscript.cli:main"
 
 [tool.setuptools.packages.find]

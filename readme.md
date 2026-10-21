@@ -221,3 +221,7 @@ python scripts/smoke_compiler.py dist/release/gs-v0.4.0.pyz
 Release ワークフローは Python 3.12 / 3.13、Node.js 22 / 24、Linux / macOS / Windows で検証します。必須ジョブのどれかが失敗すれば公開しません。コンパイラ、パッケージ、Git タグのバージョンも照合します。
 
 [公開条件](docs/release-plan.md) · [リリースノート](docs/releases/v0.4.0.md) · [ソースコード](https://github.com/sofia-gros/gscript)
+
+## Editor plugins
+
+VSCode・Zed向けのシンタックスハイライトと言語サーバーを[Plugin v0.4.0](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.4.0)で配布しています。[インストール・設定](docs/editors.md)を参照してください。

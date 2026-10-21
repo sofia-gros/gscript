@@ -41,7 +41,8 @@ class Module:
 
 
 class Project:
-    def __init__(self, entry, root=None, format='mjs', cache=True, cache_dir=None, typescript=None, strict_null=False):
+    def __init__(self, entry, root=None, format='mjs', cache=True, cache_dir=None, typescript=None, strict_null=False, sources=None):
+        self.sources = {Path(path).resolve(): text for path, text in (sources or {}).items()}
         self.strict_null = strict_null
         self.format = format
         self.interop_options = {'cache': cache, 'cache_dir': cache_dir, 'typescript': typescript}
@@ -80,7 +81,7 @@ class Project:
             if current in self.modules:
                 continue
             def load():
-                text = current.read_text(encoding='utf-8')
+                text = self.sources[current] if current in self.sources else current.read_text(encoding='utf-8')
                 program = parse_code(text)
                 module = Module(current, program, source_text=text)
                 self.modules[current] = module
@@ -105,7 +106,7 @@ class Project:
                     if not path.startswith(('./', '../')):
                         raise CompileError('GS imports must be relative paths', node.line)
                     dependency = (current.parent / path).resolve()
-                    if not dependency.is_file():
+                    if dependency not in self.sources and not dependency.is_file():
                         raise CompileError(f'module not found: {path}', node.line)
                     module.imports[id(node)] = dependency
                     dependencies.append(dependency)

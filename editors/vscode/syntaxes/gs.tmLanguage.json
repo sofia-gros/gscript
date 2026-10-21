@@ -1,0 +1,50 @@
+{
+  "name": "GS",
+  "scopeName": "source.gscript",
+  "patterns": [
+    {
+      "name": "comment.line.double-slash.gs",
+      "begin": "//",
+      "end": "$"
+    },
+    {
+      "name": "comment.block.gs",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    {
+      "name": "string.quoted.gs",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.gs",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "string.quoted.gs",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "name": "constant.character.escape.gs",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "constant.numeric.gs",
+      "match": "\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b"
+    },
+    {
+      "name": "keyword.control.gs",
+      "match": "\\b(?:func|type|struct|interface|enum|extends|implements|constructor|super|override|static|public|private|protected|readonly|var|const|return|if|else|for|range|switch|case|default|break|continue|async|await|new|export|import|true|false|nil|undefined|int|float|number|string|bool|any|void)\\b"
+    },
+    {
+      "name": "entity.name.function.gs",
+      "match": "\\b[A-Za-z_$][\\w$]*(?=\\s*\\()"
+    }
+  ]
+}

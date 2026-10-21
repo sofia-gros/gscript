@@ -1,0 +1,82 @@
+{
+  "name": "gscript",
+  "displayName": "GS / gscript",
+  "description": "GS language support with native compiler diagnostics, hover, completion and outline.",
+  "version": "0.4.0",
+  "publisher": "sofia-gros",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sofia-gros/gscript"
+  },
+  "license": "UNLICENSED",
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:gscript"
+  ],
+  "scripts": {
+    "build": "esbuild extension.js --bundle --platform=node --external:vscode --outfile=dist/extension.js",
+    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository"
+  },
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "3.6.2",
+    "esbuild": "0.25.12",
+    "@vscode/test-electron": "2.5.2"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "gscript",
+        "aliases": [
+          "GS",
+          "gscript"
+        ],
+        "extensions": [
+          ".gs",
+          ".gos"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "gscript",
+        "scopeName": "source.gscript",
+        "path": "./syntaxes/gs.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "GS",
+      "properties": {
+        "gscript.server.path": {
+          "type": "string",
+          "default": "gs-lsp",
+          "description": "Path to the matching gs-lsp executable."
+        },
+        "gscript.server.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "--stdio"
+          ],
+          "description": "Language server arguments. Reload the window after changing server settings."
+        },
+        "gscript.strictNull": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable the compiler's strict null checks. Reload the window after changing."
+        }
+      }
+    }
+  }
+}

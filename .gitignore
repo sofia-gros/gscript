@@ -183,3 +183,9 @@ node_modules/
 
 # Content-validated external type-checking cache
 .gs-cache/
+
+# Editor packages and tool caches
+*.vsix
+.vscode-test/
+editors/zed/extension.wasm
+editors/zed/grammars/
