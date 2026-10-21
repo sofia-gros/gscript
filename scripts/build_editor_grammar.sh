@@ -9,4 +9,6 @@ tree-sitter query ../zed/languages/gs/highlights.scm ../../examples/advanced/mai
 tree-sitter query ../zed/languages/gs/brackets.scm ../../examples/advanced/main.gs
 tree-sitter query ../zed/languages/gs/indents.scm ../../examples/advanced/main.gs
 mkdir -p ../zed/grammars
-tree-sitter build --wasm --output ../zed/grammars/gs.wasm
+tree-sitter build --wasm --output gs.wasm
+tree-sitter parse --wasm ../../examples/advanced/main.gs
+mv gs.wasm ../zed/grammars/gs.wasm

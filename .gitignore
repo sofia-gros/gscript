@@ -189,3 +189,5 @@ node_modules/
 .vscode-test/
 editors/zed/extension.wasm
 editors/zed/grammars/
+
+editors/tree-sitter-gs/gs.wasm

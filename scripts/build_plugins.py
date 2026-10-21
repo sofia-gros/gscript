@@ -52,6 +52,11 @@ def main():
             else:
                 with tarfile.open(output/(name+'.tar.gz'),'w:gz') as archive:archive.add(folder,arcname=name)
     if args.editors:
+        extension=(ROOT/'editors/zed/extension.wasm').read_bytes()
+        grammar=(ROOT/'editors/zed/grammars/gs.wasm').read_bytes()
+        assert extension[:8]==b'\x00asm\x0d\x00\x01\x00', 'Zed extension must be a WebAssembly component'
+        assert b'zed:api-version' in extension, 'missing Zed API version'
+        assert grammar[:8]==b'\x00asm\x01\x00\x00\x00', 'invalid grammar WASM'
         shutil.copy2(ROOT/f'editors/vscode/gscript-{__version__}.vsix',output/f'gscript-v{__version__}.vsix')
         with zipfile.ZipFile(output/f'gscript-zed-v{__version__}.zip','w',zipfile.ZIP_DEFLATED) as archive:
             base=ROOT/'editors/zed'

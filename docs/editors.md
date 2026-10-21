@@ -76,7 +76,7 @@ npm ci --prefix editors/vscode
 npm run package --prefix editors/vscode
 # Linux + Xvfbで本物のVSCode extension hostを検証
 xvfb-run -a node editors/vscode/test/run.cjs
-cargo build --release --target wasm32-wasip1 --manifest-path editors/zed/Cargo.toml
+cargo build --release --target wasm32-wasip2 --manifest-path editors/zed/Cargo.toml
 ```
 
 GitHub ActionsはVSCode実接続、Tree-sitterクエリー、Rust/WASMビルド、3OSの配布サーバーのstdio通信を検証した後にReleaseを作成します。
