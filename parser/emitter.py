@@ -130,7 +130,8 @@ class Emitter:
         if k == 'array':
             code = '[' + ', '.join(self.expr(child) for child in c) + ']'
             if self.format == 'ts':
-                code = '(' + code + ' satisfies globalThis.Array<' + self.annotation(node, v) + '>)'
+                element_type = 'globalThis.Array<' + self.annotation(node, v) + '>'
+                code = '((' + code + ' satisfies ' + element_type + ') as ' + element_type + ')'
             return code
         if k in ('object', 'composite'):
             parts = []

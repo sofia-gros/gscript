@@ -200,6 +200,26 @@ console.log(twice(box.value), box.scale(2), identity("typed"))
                 self.build(entry, root / 'out')
             self.assertEqual(output.read_text(), before)
 
+    def test_external_project_preserves_typed_empty_array_operations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.package(root)
+            entry = root / 'main.gs'
+            entry.write_text('import { twice } from "@fixture/math"\nvalues := []int{}\nvalues.push(twice(2))\nconsole.log(values[0])')
+            for format in ('js', 'mjs', 'ts'):
+                with self.subTest(format=format):
+                    output = self.build(entry, root / format, format)
+                    if format == 'ts':
+                        output = self.transpile_ts(output, root / 'ts-js')
+                    self.assertEqual(self.execute(output), '4\n')
+
+    def test_missing_side_effect_import_is_a_compile_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            entry = Path(directory) / 'main.gs'
+            entry.write_text('import "missing-gs-fixture-package"')
+            with self.assertRaisesRegex(CompileError, 'TS2307'):
+                self.check(entry)
+
     def test_tsconfig_paths_aliases_are_rewritten_for_runtime(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

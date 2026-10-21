@@ -51,6 +51,7 @@ const options = {
   moduleResolution: configOptions.moduleResolution ?? ts.ModuleResolutionKind.NodeNext,
   jsx: configOptions.jsx ?? ts.JsxEmit.ReactJSX,
   allowJs: true, checkJs: true, strict: true, noImplicitAny: true,
+  noUncheckedSideEffectImports: true,
   allowSyntheticDefaultImports: true, esModuleInterop: true,
   allowImportingTsExtensions: true, skipLibCheck: true,
   maxNodeModuleJsDepth: 2,
