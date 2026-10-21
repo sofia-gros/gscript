@@ -120,6 +120,55 @@ console.log(Math.max("2", "3"), new Error(42).message, basename("/tmp/file"))
             except CompileError:
                 pass
 
+    def test_shadow_initializers_and_loop_bindings_in_every_output_format(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'main.gs'
+            source.write_text('''n := 2
+if true { n := n + 1; console.log(n) }
+i := 2
+for i := i; i < 4; i++ { console.log(i) }
+values := []int{7, 8}
+for values, n := range values { console.log(values, n) }
+Math := Math
+console.log(Math.max(1, 2), n, i)
+func f(f int) int { return f + 1 }
+console.log(f(2))
+''')
+            for format in ('js', 'mjs', 'ts'):
+                with self.subTest(format=format):
+                    output = build_project(source, root / format, format=format)
+                    if format == 'ts':
+                        output = self.typescript(output, root / 'ts-js')
+                    self.assertEqual(self.node(output), '3\n2\n3\n0 7\n1 8\n2 2 2\n3\n')
+
+    def test_renamed_export_keeps_its_public_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'model.gs').write_text('export const Math any = Math')
+            (root / 'main.gs').write_text('import { Math } from "./model.gs"\nconsole.log(Math.max(1, 3))')
+            for format in ('mjs', 'ts'):
+                output = build_project(root / 'main.gs', root / format, format=format)
+                if format == 'ts':
+                    output = self.typescript(output, root / 'ts-js')
+                self.assertEqual(self.node(output), '3\n')
+
+    def test_typescript_helpers_do_not_collide_with_source_type_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'main.gs'
+            source.write_text('''type Array struct { Values []int }
+type Partial struct { Name string }
+type Record struct { Name string }
+a := Array{Values: []int{1, 2}}
+p := Partial{Name: "ok"}
+console.log(a.Values[0], p.Name)
+''')
+            output = build_project(source, root / 'out', format='ts')
+            self.assertEqual(self.node(self.typescript(output, root / 'js')), '1 ok\n')
+        with self.assertRaisesRegex(CompileError, 'reserved type name'):
+            compile_source('type int struct { Name string }')
+
     def test_module_type_errors_do_not_become_any(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

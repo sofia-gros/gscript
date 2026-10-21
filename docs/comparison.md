@@ -34,8 +34,8 @@ console.log(greet(name))
 ### 生成 JavaScript
 
 ```javascript
-function greet(name) {
-  return ("Hello, " + name);
+function greet(__gs_local0) {
+  return ("Hello, " + __gs_local0);
 }
 
 let name = "Sofia";
@@ -81,8 +81,8 @@ class Person {
     this["Name"] = __gscript0;
   }
   Greet() {
-    const p = this;
-    return ("Hello, " + (p).Name);
+    const __gs_local0 = this;
+    return ("Hello, " + (__gs_local0).Name);
   }
 }
 

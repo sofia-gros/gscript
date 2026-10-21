@@ -170,6 +170,8 @@ class Project:
                 checker.bind(node, local, target[exported].typ, True, 'import')
                 checker.scopes[0][local].target = target[exported]
                 if target[exported].typ.kind == 'constructor':
+                    if local in {'int', 'float', 'float64', 'number', 'string', 'bool', 'boolean', 'any', 'object', 'void', 'Promise'}:
+                        checker.fail(node, f'reserved type name: {local}')
                     checker.type_names[local] = target[exported].typ.name
 
     def emit(self, module, format='mjs', out_dir=None):

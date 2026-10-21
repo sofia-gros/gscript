@@ -47,9 +47,9 @@ class Emitter:
         if typ.kind in ('number', 'string', 'void', 'null'):
             return typ.kind
         if typ.kind == 'array':
-            return 'Array<' + self.ts_type(typ.args[0]) + '>'
+            return 'globalThis.Array<' + self.ts_type(typ.args[0]) + '>'
         if typ.kind == 'promise':
-            return 'Promise<' + self.ts_type(typ.args[0]) + '>'
+            return 'globalThis.Promise<' + self.ts_type(typ.args[0]) + '>'
         if typ.kind in ('struct', 'constructor'):
             names = [name for name, key in self.checker.type_names.items() if key == typ.name]
             if not names:
@@ -64,8 +64,11 @@ class Emitter:
         if typ.kind == 'record':
             return '{' + '; '.join(json.dumps(k) + ': ' + self.ts_type(t) for k, t in typ.fields) + '}'
         if typ.kind == 'object':
-            return 'Record<string, any>'
+            return '{[key: string]: any}'
         return 'any'
+
+    def binding(self, node, name):
+        return getattr(node, 'bindings', {}).get(name, name)
 
     def annotation(self, node, type_name):
         return self.ts_type(self.checker.declared_type(node, type_name))
@@ -89,15 +92,16 @@ class Emitter:
     def function(self, node, anonymous=False, method=False):
         name, params, result, asynchronous, receiver = node.value
         prefix = 'async ' if asynchronous else ''
-        names = ', '.join(name + (': ' + self.annotation(node, typ) if self.format == 'ts' else '') for name, typ in params)
+        names = ', '.join(self.binding(node, name) + (': ' + self.annotation(node, typ) if self.format == 'ts' else '') for name, typ in params)
         returns = ''
         if self.format == 'ts':
             result_type = self.annotation(node, result)
-            returns = ': ' + (f'Promise<{result_type}>' if asynchronous else result_type)
-        body = self.block(node.children, f'const {receiver[0]} = this;' if receiver else '')
+            returns = ': ' + (f'globalThis.Promise<{result_type}>' if asynchronous else result_type)
+        body = self.block(node.children, f'const {self.binding(node, receiver[0])} = this;' if receiver else '')
         if anonymous:
             return f'({prefix}({names}){returns} => {body})'
-        return f'{prefix}{"" if method else "function "}{name}({names}){returns} {body}'
+        emitted_name = name if method else getattr(node, 'declaration_name', name)
+        return f'{prefix}{"" if method else "function "}{emitted_name}({names}){returns} {body}'
 
     def expr(self, node):
         code = self.expression(node)
@@ -114,7 +118,7 @@ class Emitter:
         if k == 'name':
             if self.format == 'ts' and v in ('nil', 'null'):
                 return 'null!'
-            return 'console.log' if getattr(node, 'builtin', False) else {'nil': 'null'}.get(v, v)
+            return 'console.log' if getattr(node, 'builtin', False) else {'nil': 'null'}.get(v, getattr(node, 'resolved_name', v))
         if k == 'array':
             return '[' + ', '.join(self.expr(child) for child in c) + ']'
         if k in ('object', 'composite'):
@@ -127,7 +131,7 @@ class Emitter:
                     # A computed key preserves __proto__ as an ordinary own property.
                     parts.append(f'[{key}]: {self.expr(item.children[0])}')
             obj = '{' + ', '.join(parts) + '}'
-            return f'new {v}({obj})' if k == 'composite' else '(' + obj + ')'
+            return f'new {getattr(node, "constructor_name", v)}({obj})' if k == 'composite' else '(' + obj + ')'
         if k == 'member':
             return f'({self.expr(c[0])}).{v}'
         if k == 'index':
@@ -140,6 +144,7 @@ class Emitter:
         if k == 'call':
             return f'({self.expr(c[0])})({", ".join(self.expr(arg) for arg in c[1:])})'
         if k == 'new':
+            v = getattr(node, 'constructor_name', v)
             if self.format == 'ts' and self.checker.types.get(id(node)) == ANY:
                 v = '(' + v + ' as any)'
             return f'new {v}({", ".join(self.expr(arg) for arg in c)})'
@@ -155,10 +160,10 @@ class Emitter:
             kind, name, typ = v
             value = self.expr(c[0]) if c[0] else self.default(typ)
             annotation = ': ' + self.annotation(node, typ) if self.format == 'ts' and typ else ''
-            return f'{"const" if kind == "const" else "let"} {name}{annotation} = {value}'
+            return f'{"const" if kind == "const" else "let"} {self.binding(node, name)}{annotation} = {value}'
         if k == 'assign':
             if v == ':=':
-                return f'let {c[0].value} = {self.expr(c[1])}'
+                return f'let {self.binding(node, c[0].value)} = {self.expr(c[1])}'
             return f'{self.expr(c[0])} {v} {self.expr(c[1])}'
         if k == 'update':
             return self.expr(c[0]) + v
@@ -169,6 +174,11 @@ class Emitter:
         if k == 'default':
             return 'export default ' + self.expr(c[0]) + ';'
         if k == 'export':
+            if c[0].kind == 'decl':
+                source_name = c[0].value[1]
+                emitted = self.binding(c[0], source_name)
+                if emitted != source_name:
+                    return self.statement(c[0]) + f'\nexport {{ {emitted} as {source_name} }};'
             return 'export ' + self.statement(c[0])
         if k in ('decl', 'assign', 'update', 'expr'):
             return self.simple(node) + ';'
@@ -188,7 +198,7 @@ class Emitter:
             local_names = [self.fresh() for _ in fields]
             params = ', '.join(f'{json.dumps(name)}: {local_names[i]} = {self.expr(default) if default else self.default(typ)}'
                                for i, (name, typ, default) in enumerate(fields))
-            annotation = f': Partial<{name}>' if self.format == 'ts' else ''
+            annotation = f': globalThis.Partial<{name}>' if self.format == 'ts' else ''
             lines = [f'constructor({{{params}}}{annotation} = {{}}) {{']
             for i, (field_name, _, _) in enumerate(fields):
                 key = json.dumps(field_name)
@@ -211,9 +221,9 @@ class Emitter:
         if k == 'range':
             expr = self.expr(c[0])
             if len(v) == 2:
-                header = f'let [{v[0]}, {v[1]}] of ({expr}).entries()'
+                header = f'let [{self.binding(node, v[0])}, {self.binding(node, v[1])}] of ({expr}).entries()'
             else:
-                header = f'let {v[0]} of ({expr}).keys()'
+                header = f'let {self.binding(node, v[0])} of ({expr}).keys()'
             return f'for ({header}) {self.block(c[1])}'
         if k == 'for':
             init = self.simple(c[0]) if c[0] else ''
@@ -221,5 +231,5 @@ class Emitter:
             step = self.simple(c[2]) if c[2] else ''
             return f'for ({init}; {cond}; {step}) {self.block(c[3])}'
         if k == 'try':
-            return f'try {self.block(c[0])} catch ({v}{": any" if self.format == "ts" else ""}) {self.block(c[1])}'
+            return f'try {self.block(c[0])} catch ({self.binding(node, v)}{": any" if self.format == "ts" else ""}) {self.block(c[1])}'
         raise AssertionError(f'unhandled checked statement: {k}')

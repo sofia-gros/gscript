@@ -4,6 +4,7 @@
 """
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+import re
 
 from .syntax import CompileError, decode_string
 
@@ -48,6 +49,7 @@ def promise(result):
 
 class Symbol:
     def __init__(self, typ, constant=False, category='variable', target=None, initialized=True):
+        self.js_name = None
         self._initialized = initialized
         self._typ, self.constant, self.category, self.target = typ, constant, category, target
 
@@ -107,6 +109,8 @@ class Checker:
         self.seen_functions = set()
         self.defer_functions = False
         self.deferred_functions = []
+        self.used_names = set()
+        self.name_counter = 0
 
     def fail(self, node, message):
         raise CompileError(message, node.line)
@@ -130,6 +134,24 @@ class Checker:
         else:
             symbol.typ, symbol.constant, symbol.category = typ, constant, category
             symbol.initialized = True
+        # JS puts let bindings in a temporal dead zone throughout their block;
+        # GS resolves an initializer before binding the new name. Give shadowed
+        # lexical bindings a distinct JS name so those semantics remain intact.
+        emitted = name
+        shadowed = any(name in scope for scope in self.scopes[:-1]) or name in GLOBALS or name == 'printf'
+        if category == 'variable' and shadowed:
+            while True:
+                emitted = f'__gs_local{self.name_counter}'
+                self.name_counter += 1
+                if emitted not in self.used_names:
+                    self.used_names.add(emitted)
+                    break
+        symbol.js_name = emitted
+        if not hasattr(node, 'bindings'):
+            node.bindings = {}
+        node.bindings[name] = emitted
+        if category in ('function', 'struct'):
+            node.declaration_name = emitted
         self.scopes[-1][name] = symbol
 
     def lookup(self, node, name):
@@ -225,6 +247,8 @@ class Checker:
                 if not module:
                     self.fail(n, 'struct declarations must be at module scope')
                 name, _ = n.value
+                if name in {'int', 'float', 'float64', 'number', 'string', 'bool', 'boolean', 'any', 'object', 'void', 'Promise'}:
+                    self.fail(n, f'reserved type name: {name}')
                 key = f'{self.module_id}::{name}' if self.module_id else name
                 if key in self.structs:
                     self.fail(n, f'duplicate struct: {name}')
@@ -276,6 +300,7 @@ class Checker:
         self.declare_signatures(nodes, module)
 
     def run(self, program):
+        self.used_names.update(re.findall(r'[A-Za-z_$][A-Za-z0-9_$]*', repr(program)))
         self.statements(program.children, module=True)
         return self.types
 
@@ -427,6 +452,7 @@ class Checker:
             symbol = self.lookup(n, v)
             if not symbol.initialized:
                 self.fail(n, f'module value used before initialization: {v}')
+            n.resolved_name = symbol.js_name or v
             n.builtin = v == 'printf' and symbol.category == 'global'
             return symbol.typ
         if k == 'array':
@@ -451,6 +477,7 @@ class Checker:
                     self.fail(n, f'unknown struct: {v}')
                 if symbol.typ.kind != 'constructor':
                     self.fail(n, f'unknown struct: {v}')
+                n.constructor_name = symbol.js_name or v
                 struct_key = symbol.typ.name
                 target = self.structs[struct_key].fields
             for item in c:
@@ -530,7 +557,9 @@ class Checker:
             return self.check_function(n)
         if k == 'new':
             names = v.split('.')
-            constructor = self.lookup(n, names[0]).typ
+            constructor_symbol = self.lookup(n, names[0])
+            n.constructor_name = '.'.join([constructor_symbol.js_name or names[0], *names[1:]])
+            constructor = constructor_symbol.typ
             for name in names[1:]:
                 constructor = self.property(n, constructor, name)
             args = [self.expr(arg) for arg in c]
