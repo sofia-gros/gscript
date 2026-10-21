@@ -89,7 +89,7 @@ console.log(twice(p.x))
             entry.write_text('import { twice } from "./lib.js"\ntwice("bad")')
             with self.assertRaisesRegex(CompileError, 'TS2345') as failure:
                 self.build(entry, root / 'bad')
-            self.assertEqual(Path(failure.exception.filename), entry)
+            self.assertTrue(os.path.samefile(failure.exception.filename, entry))
             self.assertEqual(failure.exception.line, 2)
             self.assertFalse((root / 'bad').exists())
 
