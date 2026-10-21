@@ -50,6 +50,10 @@ class Project:
     def _located(self, source, action):
         try:
             return action()
+        except RecursionError as error:
+            failure = CompileError('source or module nesting exceeds compiler capacity')
+            failure.filename = str(source)
+            raise failure from error
         except (CompileError, OSError, UnicodeError) as error:
             if not getattr(error, 'filename', None):
                 error.filename = str(source)
@@ -140,6 +144,7 @@ class Project:
             if node.kind != 'import':
                 continue
             dependency = module.imports.get(id(node))
+            node.gs_module = dependency is not None
             if dependency is None:
                 continue
             checker.prepared.add(id(node))

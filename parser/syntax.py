@@ -188,16 +188,16 @@ class Parser:
         self.separators()
         while not self.at(')'):
             name = self.name()
-            typ = self.type_name() if not self.at(',') and not self.at(')') else 'any'
+            typ = self.type_name() if not self.at(',') and not self.at(')') else None
             params.append((name, typ))
             if not self.accept(','):
                 break
             self.separators()
         self.take(')')
         for index in range(len(params) - 2, -1, -1):
-            if params[index][1] == 'any' and params[index + 1][1] != 'any':
+            if params[index][1] is None and params[index + 1][1] is not None:
                 params[index] = (params[index][0], params[index + 1][1])
-        return params
+        return [(name, typ or 'any') for name, typ in params]
 
     def function(self, asynchronous=False, anonymous=False):
         line = self.token.line
@@ -460,5 +460,8 @@ class Parser:
 
 
 def parse_code(source):
-    parser = Parser(source)
-    return Node('program', children=parser.program())
+    try:
+        parser = Parser(source)
+        return Node('program', children=parser.program())
+    except RecursionError as error:
+        raise CompileError('source nesting exceeds compiler capacity') from error

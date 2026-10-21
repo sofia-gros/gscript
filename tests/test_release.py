@@ -1,8 +1,7 @@
 """Release gates: link errors and real JS/MJS/TypeScript execution."""
 import json
-import os
+import random
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -47,6 +46,17 @@ class ReleaseTests(unittest.TestCase):
                         output = self.typescript(output, root / 'typescript-js')
                     self.assertEqual(self.node(output), 'Hello, Sofia Hello, GS answer 42 4\n')
 
+    def test_typescript_preserves_dynamic_js_boundaries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'main.gs'
+            source.write_text('''import { basename } from "node:path"
+console.log(Math.max("2", "3"), new Error(42).message, basename("/tmp/file"))
+''')
+            output = build_project(source, root / 'out', format='ts')
+            js = self.typescript(output, root / 'js')
+            self.assertEqual(self.node(js), '3 42 file\n')
+
     def test_all_examples_in_every_format(self):
         expected = {'hello.gs': 'Hello, GS\n', 'main.gos': 'Hello, Sofia\nHello, Sofia\n0 2\n1 4\n2 6\nSofia 29\n',
                     'hello.gos': 'Hello, World\n', 'vars.gos': 'Sofia 3\n',
@@ -79,6 +89,36 @@ class ReleaseTests(unittest.TestCase):
             (root / 'model.gs').write_text('type P struct { Name string }\nexport default P')
             (root / 'main.gs').write_text('import User from "./model.gs"\nfunc name(p User) string { return p.Name }\nconsole.log(name(User{Name: "Sofia"}))')
             self.assertEqual(self.node(build_project(root / 'main.gs', root / 'out')), 'Sofia\n')
+
+    def test_fileless_api_does_not_silently_skip_local_module_checks(self):
+        with self.assertRaisesRegex(CompileError, 'source path'):
+            compile_source('import { f } from "./model.gs"\nf("bad")')
+
+    def test_explicit_any_is_not_overwritten_by_grouped_parameter_types(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'main.gs'
+            source.write_text('func echo(value any, n int) string { return value }\nconsole.log(echo("ok", 1))')
+            output = build_project(source, root / 'out', format='ts')
+            js = self.typescript(output, root / 'js')
+            self.assertEqual(self.node(js), 'ok\n')
+
+    def test_excessive_nesting_is_a_compile_error_not_a_traceback(self):
+        with self.assertRaisesRegex(CompileError, 'capacity'):
+            compile_source('(' * 5000 + '1' + ')' * 5000)
+
+    def test_malformed_input_does_not_crash_the_compiler(self):
+        rng = random.Random(20261021)
+        tokens = ['func', 'var', 'const', 'type', 'struct', 'export', 'default', 'import',
+                  'if', 'else', 'for', 'return', 'async', 'await', 'new', 'catch', 'try',
+                  'n', 'int', 'string', 'any', '1', '"x"', '{', '}', '(', ')', '[', ']',
+                  ':=', '=', ',', ';', '\n', '+', '*', '.', '...']
+        for _ in range(5000):
+            source = ' '.join(rng.choices(tokens, k=rng.randrange(1, 45)))
+            try:
+                compile_source(source)
+            except CompileError:
+                pass
 
     def test_module_type_errors_do_not_become_any(self):
         with tempfile.TemporaryDirectory() as directory:

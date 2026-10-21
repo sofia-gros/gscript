@@ -2,7 +2,7 @@
 import json
 import re
 
-from .checker import unwrap, Type, Checker
+from .checker import unwrap, Type, Checker, ANY
 from .syntax import decode_string
 
 
@@ -100,6 +100,12 @@ class Emitter:
         return f'{prefix}{"" if method else "function "}{name}({names}){returns} {body}'
 
     def expr(self, node):
+        code = self.expression(node)
+        if self.format == 'ts' and node.kind in ('name', 'member', 'index') and self.checker.types.get(id(node)) == ANY:
+            return '(' + code + ' as any)'
+        return code
+
+    def expression(self, node):
         k, v, c = node.kind, node.value, node.children
         if k == 'string':
             return json.dumps(decode_string(v))
@@ -134,6 +140,8 @@ class Emitter:
         if k == 'call':
             return f'({self.expr(c[0])})({", ".join(self.expr(arg) for arg in c[1:])})'
         if k == 'new':
+            if self.format == 'ts' and self.checker.types.get(id(node)) == ANY:
+                v = '(' + v + ' as any)'
             return f'new {v}({", ".join(self.expr(arg) for arg in c)})'
         if k == 'lambda':
             return self.function(node, anonymous=True)
@@ -167,7 +175,10 @@ class Emitter:
         if k == 'import':
             binding, path = v
             path = json.dumps(decode_string(path))
-            return f'import {path};' if binding is None else f'import {binding} from {path};'
+            code = f'import {path};' if binding is None else f'import {binding} from {path};'
+            if self.format == 'ts' and not getattr(node, 'gs_module', False):
+                code = '// @ts-ignore -- external JavaScript is a GS any boundary.\n' + code
+            return code
         if k == 'func':
             return '' if v[4] else self.function(node)
         if k == 'struct':
