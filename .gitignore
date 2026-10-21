@@ -191,3 +191,5 @@ editors/zed/extension.wasm
 editors/zed/grammars/
 
 editors/tree-sitter-gs/gs.wasm
+
+editors/vscode/server/

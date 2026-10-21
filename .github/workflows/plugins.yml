@@ -21,7 +21,8 @@ jobs:
       - run: python scripts/check_plugin_versions.py "${{ github.ref_name }}"
       - run: npm ci --prefix editors/vscode
       - run: npm run package --prefix editors/vscode
-      - name: Test actual VSCode extension host
+      - run: node --test editors/vscode/test/server.cjs
+      - name: Test installed VSIX with bundled server
         run: python scripts/ci_command.py xvfb-run -a node editors/vscode/test/run.cjs
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -85,5 +86,5 @@ jobs:
         run: >-
           gh release create "$RELEASE_TAG" plugin-assets/*
           --repo "$GITHUB_REPOSITORY" --verify-tag
-          --title "Plugin v0.4.0"
+          --title "Plugin v0.4.0 (修正版 r2)"
           --notes-file "docs/releases/$RELEASE_TAG.md"

@@ -59,6 +59,7 @@ def main():
         assert grammar[:8]==b'\x00asm\x01\x00\x00\x00', 'invalid grammar WASM'
         shutil.copy2(ROOT/f'editors/vscode/gscript-{__version__}.vsix',output/f'gscript-v{__version__}.vsix')
         with zipfile.ZipFile(output/f'gscript-zed-v{__version__}.zip','w',zipfile.ZIP_DEFLATED) as archive:
+            archive.write(ROOT/'docs/editors.md','gscript-zed/README.md')
             base=ROOT/'editors/zed'
             for p in base.rglob('*'):
                 relative=p.relative_to(base)

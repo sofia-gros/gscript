@@ -20,7 +20,7 @@
     "onLanguage:gscript"
   ],
   "scripts": {
-    "build": "esbuild extension.js --bundle --platform=node --external:vscode --outfile=dist/extension.js",
+    "build": "python ../../scripts/build_plugins.py --portable --output server && esbuild extension.js --bundle --platform=node --external:vscode --outfile=dist/extension.js",
     "package": "npm run build && vsce package --no-dependencies --allow-missing-repository"
   },
   "dependencies": {
@@ -58,8 +58,8 @@
       "properties": {
         "gscript.server.path": {
           "type": "string",
-          "default": "gs-lsp",
-          "description": "Path to the matching gs-lsp executable."
+          "default": "",
+          "description": "Optional native server or Python executable path. Empty: detect gs-lsp 0.4.0, otherwise run the bundled server with Python 3.12+."
         },
         "gscript.server.args": {
           "type": "array",

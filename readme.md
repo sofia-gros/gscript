@@ -2,25 +2,29 @@
 
 # GS / gscript
 
-**Go の書き心地で、JavaScript の世界へ。**
+**Go風の構文を、JavaScriptの実行環境へ。**
 
-構文と型を検査し、JavaScript・ES Modules・TypeScript にコンパイルする言語。
+[![Tests](https://github.com/sofia-gros/gscript/actions/workflows/test.yml/badge.svg)](https://github.com/sofia-gros/gscript/actions/workflows/test.yml)
 
-[![Compiler tests](https://github.com/sofia-gros/gscript/actions/workflows/test.yml/badge.svg)](https://github.com/sofia-gros/gscript/actions/workflows/test.yml)
-[![Release compiler](https://github.com/sofia-gros/gscript/actions/workflows/release.yml/badge.svg)](https://github.com/sofia-gros/gscript/actions/workflows/release.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/sofia-gros/gscript)](https://github.com/sofia-gros/gscript/releases/latest)
-
-[はじめる](#はじめる) · [言語仕様](docs/language.md) · [Go / GS / JS の比較](docs/comparison.md) · [ダウンロード](https://github.com/sofia-gros/gscript/releases)
+[コンパイラ v0.4.0](https://github.com/sofia-gros/gscript/releases/tag/v0.4.0) · [エディター拡張](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.4.0-r2) · [インストール](docs/installation.md) · [言語仕様](docs/language.md)
 
 </div>
 
+GSは構文・型・スコープ・モジュールを検査し、JavaScript ES ModulesまたはTypeScriptを生成する言語です。`func`、`:=`、struct、レシーバー構文を使いつつ、JavaScriptのオブジェクト・配列・npm・`async / await`を扱います。実行時の数値・参照・非同期処理はJavaScriptに従います。
+
 ```go
 func greet(name string) string {
-  return "Hello, " + name
+    return "Hello, " + name
 }
 
 console.log(greet("GS"))
 ```
+
+## はじめる
+
+[コンパイラRelease](https://github.com/sofia-gros/gscript/releases/tag/v0.4.0)からOS・CPUに合うネイティブ版を展開し、`gs`（Windowsは`gs.exe`）を実行します。Python版・wheelもあります。OS別のコマンドとPATH設定は[インストール手順](docs/installation.md)を参照してください。
+
+上のコードを`hello.gs`に保存します。
 
 ```sh
 gs hello.gs --format mjs -o dist/hello.mjs
@@ -28,200 +32,67 @@ node dist/hello.mjs
 # Hello, GS
 ```
 
-## GS が大切にしていること
+GSのみのコンパイルにNode.jsやTypeScriptは不要です。生成JSの検証対象はNode.js 22/24です。外部JS/TSの型を読む場合はNode.js 22/24とプロジェクト内のTypeScript 5.9.3が必要です。
 
-| Go に近い構文 | JavaScript と自然につながる | 実行前に間違いを見つける |
+## 出力形式
+
+| 指定 | 出力 | 実行 |
 | --- | --- | --- |
-| `:=`、`func`、struct、レシーバーメソッド、`range` | オブジェクト、配列 API、npm、`async / await` | 構文・型・スコープ・モジュールの検査 |
-
-GS は独自の言語です。Go のランタイムを移植するものではなく、実行時の数値・参照・非同期処理は JavaScript のモデルに従います。[確定仕様と公開条件](docs/release-plan.md)を実装前に定義し、公開時にも検証しています。
-
-## はじめる
-
-### コンパイラをダウンロード
-
-[GitHub Releases](https://github.com/sofia-gros/gscript/releases/latest) から、OS と CPU に合うアーカイブを選んで展開してください。
-
-- Linux / macOS：展開した `gs` を実行。必要なら `chmod +x gs`。
-- Windows：展開した `gs.exe` を実行。
-- Python 版：Python 3.12 以上で `python gs-v0.4.0.pyz --version`。
-- Python パッケージ：wheel をダウンロードし、`python -m pip install ./gscript_lang-0.4.0-py3-none-any.whl`。
-
-単体実行ファイルには Python を同梱しているため、Python の別途インストールは不要です。各配布物の SHA-256 は Release の `SHA256SUMS` で確認できます。ネイティブ版の実行基盤は、Linux が Ubuntu 22.04 以降、macOS が 14 以降、Windows が Windows Server 2022 / Windows 11 系です。CPU はファイル名に記載します。別の基盤では Python 版を利用してください。
-
-生成した JavaScript の実行には Node.js 22 / 24、または ES2022 Modules を提供する実行環境が必要です。リリースの実行検証対象は Node.js 22 / 24 です。ブラウザーへ組み込む場合は `<script type="module">` や既存のバンドラーを使い、実行環境の API を選んでください。
-
-### チェックアウトから使う
-
-```sh
-# Python 3.12 以上。GS 単独のコンパイルには Node / TypeScript は不要です。
-python -m pip install .
-gs examples/hello.gs --format mjs -o build/hello.mjs
-node build/hello.mjs
-```
-
-インストールせずに `python -m gscript` でも実行できます。`gscript` コマンドと従来の `.gos` も引き続き使えます。
-
-## 出力形式を選ぶ
-
-```sh
-gs hello.gs --format js  -o dist/hello.js
-gs hello.gs --format mjs -o dist/hello.mjs
-gs hello.gs --format ts  -o dist/hello.ts
-```
-
-| `--format` | 生成物 | 実行方法 |
-| --- | --- | --- |
-| `js` | `.js` の ES2022 Modules | Node.js。出力先に `type: module` を設定 |
-| `mjs` | `.mjs` の ES2022 Modules | Node.js が拡張子で module と判断 |
-| `ts` | 型注釈付き TypeScript | TypeScript 5.9 で JS に変換して実行 |
-
-`-o` の拡張子からも推論できます。指定がなければ `mjs` です。形式と拡張子が矛盾する引数はエラーになります。
-
-JS / TS のファイル出力では、必要な `package.json` を出力先に作成します。既存の CommonJS 設定は上書きせずエラーにするので、専用の出力ディレクトリか `mjs` を選んでください。標準出力を使う場合のモジュール設定は、保存先のプロジェクト側で管理します。
-
-TS を使う場合の例：
-
-```sh
-npm install --save-dev typescript@5.9.3
-gs hello.gs --format ts -o dist/hello.ts
-npx tsc dist/hello.ts --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --outDir dist/js
-node dist/js/hello.js
-```
-
-形式の違いは API の違いを埋めません。たとえば `node:fs` はブラウザーでは動作しません。GS は言語の型を検査し、外部の JavaScript API はその API の実行環境に従って扱います。
-
-## 型を検査する
-
-```go
-func double(n int) int {
-  return n * 2
-}
-
-double("wrong") // コンパイルエラー：数値の引数に文字列
-```
+| `--format mjs` | ES2022 Modules `.mjs` | Node.jsで直接実行 |
+| `--format js` | ES2022 Modules `.js` | 出力先の`package.json`に`type: module`が必要 |
+| `--format ts` | 型注釈付き`.ts` | TypeScriptでJSへ変換して実行 |
 
 ```sh
 gs hello.gs --check
+gs hello.gs --format js -o dist/hello.js
+gs hello.gs --format ts -o dist/hello.ts
+# GSモジュール・外部ローカルファイルをまとめて出力
+gs src/main.gs --out-dir dist --format mjs
 ```
 
-構文エラー、未定義名、重複宣言、型の不一致、引数の個数、存在しないプロパティ・export、const の再代入、戻り値の漏れなどを検査します。失敗時はファイル・位置・ソース行を表示し、終了コード `1` を返します。引数の誤りは `2` です。型エラーがある場合、生成物を書き換えません。
+既定は`mjs`です。`-o`の拡張子からも推論します。複数モジュールは`--out-dir`を使います。JS/TSファイル出力時は必要なmodule設定を作成し、既存のCommonJS設定と矛盾する場合はエラーを返します。
 
-GS 同士のモジュールでは型情報を共有します。外部 JS / TS と node_modules の型情報・JSDoc・推論結果を読み込み、GS自身の型検査器で検査します。明示的な `any` は動的な値として扱います。`any` を使っても未定義名の検査は無効になりません。
+## 言語・型検査
 
-## モジュールを分ける
+- struct継承、constructor / super、レシーバーメソッド、override
+- 構造的interface、implements、制約付きGenerics
+- Nullable、Union・リテラル型、Optional Chaining、Nullish Coalescing
+- switch・網羅性検査、static、アクセス制御、readonly、型エイリアス、enum
+- GSモジュール間の型共有、外部`.d.ts`・JSDoc・node_modulesの型情報
 
-```go
-// lib/math.gs
-export func twice(n int) int {
-  return n * 2
-}
-```
+**GSコードの型検査はGSコンパイラ自身が行います。** TypeScript APIは外部JS/TSの型情報読み取りと変換に利用します。既定モードでは従来の参照型のnil規則を維持し、`--strict-null`で厳密なnil検査を選べます。
 
-```go
-// main.gs
-import { twice } from "./lib/math.gs"
-console.log(twice(21))
-```
+[基本仕様](docs/language.md) · [v0.4拡張仕様](docs/language-v0.4-extensions.md) · [外部JS/TS連携](docs/interop.md) · [Go / GS / JS比較](docs/comparison.md)
+
+## VSCode・Zed
+
+両方のエディターでシンタックスハイライト、GSの診断、型ホバー、補完、アウトラインを使えます。
+
+- **VSCode:** 修正版VSIXをインストール。Python 3.12以降があれば同梱言語サーバーが起動します。ネイティブサーバーの指定も可能です。
+- **Zed:** Rust・Gitを準備し、ZIPを展開して`Install Dev Extension`から導入します。対応OSの言語サーバーは自動取得します。
+
+**[エディター別の導入・更新・エラー対処](docs/editors.md)**
+
+コンパイラとプラグインは別のReleaseです。コンパイラのダウンロードには`v0.4.0`、プラグイン修正版には`plugin-v0.4.0-r2`を使います。Marketplace・Zed拡張レジストリーでの配布は行っていません。
+
+## ソースから実行する
+
+Python 3.12以降を使用します。
 
 ```sh
-gs main.gs --format mjs --out-dir dist
-node dist/main.mjs
+git clone https://github.com/sofia-gros/gscript.git
+cd gscript
+python -m gscript examples/hello.gs --out-dir build/hello
+node build/hello/hello.mjs
 ```
 
-相対 GS import をたどり、全ファイルを検査してから出力します。import は選んだ形式に合わせて書き換えます。TS の import は、TypeScript の NodeNext が解決できる `.js` 指定になります。
+`gs`コマンドとして導入する場合は[仮想環境へのインストール](docs/installation.md)を参照してください。
 
-共有モジュールが入口の親ディレクトリにある場合は `--root .` を指定します。ローカル JS / TS の依存も変換・配置します。npm import は保持され、依存パッケージのインストールやバンドルは利用側で行います。
-
-## 外部 JS / TS と node_modules
-
-```sh
-npm install --save-dev typescript@5.9.3
-npm install phaser@3.90.0
-gs game.gs --check
-gs game.gs --format mjs --out-dir dist
-```
-
-Phaser などの `.d.ts`、ローカル TypeScript、JavaScript の JSDoc の型情報をGSに読み込み、引数・プロパティ・戻り値をGSコンパイラ自身が検査します。外部連携には Node.js 22 / 24 と TypeScript 5.9.3 が必要です。型検査キャッシュで再コンパイルを高速化します。
-
-[連携の具体例・出力配置・キャッシュ](docs/interop.md) · [v0.4 公開条件](docs/release-plan-v0.4.md)
-
-## 継承・interface・Generics
-
-```go
-type Entity interface {
-  get() int
-}
-
-type Container<T> struct {
-  Value T
-}
-
-func (c Container<T>) get() T {
-  return c.Value
-}
-
-var item Entity = Container<int>{Value: 42}
-console.log(item.get())
-```
-
-`struct extends`、constructor / super、override、interface / implements、`T?`、`?.` / `??`、Union・リテラル型、Generics・制約、switch、static、private / protected / readonly、型エイリアス、enumに対応します。これらのGSの型検査にTypeScriptを呼び出しません。外部型定義を読み込むアダプターと、生成TSの検証工程にはTypeScriptを使用します。
-
-```sh
-# 既存のnilの動作を維持する既定モードに加え、厳密なnull検査を選べます。
-gs main.gs --strict-null --check
-```
-
-[拡張言語仕様・初期化と互換性の規則](docs/language-v0.4-extensions.md)
-
-## struct・配列・非同期処理
-
-```go
-type Person struct {
-  Name string
-}
-
-func (p Person) Greet() string {
-  return "Hello, " + p.Name
-}
-
-p := Person{Name: "Sofia"}
-console.log(p.Greet())
-
-values := []int{1, 2, 3}
-doubled := values.map(func(n int) int { return n * 2 })
-for i, n := range doubled {
-  console.log(i, n)
-}
-
-async func loadText(url string) string {
-  response := await fetch(url)
-  return await response.text()
-}
-
-console.log(await loadText("data:text/plain,Hello"))
-```
-
-詳しい構文・型・ゼロ値・参照の意味は [言語仕様](docs/language.md) にまとめています。
-
-## 開発とリリース
+## 開発・テスト
 
 ```sh
 npm ci --ignore-scripts
-python -m pip install -r requirements-build.txt
 python -m unittest discover -s tests -v
-
-# 単体実行ファイルと Python zipapp。ビルドした実行ファイルも検証します。
-python scripts/build_release.py --native --zipapp
-python scripts/smoke_compiler.py dist/release/gs-v0.4.0.pyz
 ```
 
-テストはコンパイラだけでなく、生成した JS / MJS の実行、TS の厳格な型チェックと JS への変換後の実行、インストールしたコンパイラの実行まで確認します。
-
-Release ワークフローは Python 3.12 / 3.13、Node.js 22 / 24、Linux / macOS / Windows で検証します。必須ジョブのどれかが失敗すれば公開しません。コンパイラ、パッケージ、Git タグのバージョンも照合します。
-
-[公開条件](docs/release-plan.md) · [リリースノート](docs/releases/v0.4.0.md) · [ソースコード](https://github.com/sofia-gros/gscript)
-
-## Editor plugins
-
-VSCode・Zed向けのシンタックスハイライトと言語サーバーを[Plugin v0.4.0](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.4.0)で配布しています。[インストール・設定](docs/editors.md)を参照してください。
+コンパイラ本体、生成JS/MJS/TSの実行、外部型連携を検証します。エディター拡張の配布テストは[公開ワークフロー](.github/workflows/plugins.yml)を参照してください。
