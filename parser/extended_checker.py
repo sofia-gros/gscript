@@ -58,6 +58,7 @@ class ExtendedChecker(Checker):
         self.current_class = None
         self.in_constructor = False
         self.switch_depth = 0
+        self.static_context = False
         self.compatibility_stack = set()
         self.declarations = None
         self.foreign_names = {}
@@ -179,7 +180,10 @@ class ExtendedChecker(Checker):
     def parameters(self, node, receiver=None):
         old = self.generic_context
         context = dict(old)
-        if receiver:
+        if receiver and 'static' in getattr(node,'modifiers',[]):
+            target=self.structs[self.type_names[receiver.split('<')[0]]]
+            for parameter,_ in target.parameters:context.pop(parameter,None)
+        if receiver and 'static' not in getattr(node,'modifiers',[]):
             target = self.structs[self.type_names[receiver.split('<')[0]]]
             for name, constraint in target.parameters:
                 context[name] = Type('param', name, (self.with_context(node, constraint, context) if constraint else UNKNOWN,))
@@ -209,6 +213,9 @@ class ExtendedChecker(Checker):
             target.constructor = None
             target.kind, target.node, target.checker = n.kind, n, self
             self.bind(n, name, Type('constructor' if n.kind == 'struct' else 'enum' if n.kind == 'enum' else 'type', key), True, 'struct')
+
+    def contains_parameter(self,typ,names):
+        return typ.kind=='param' and typ.name in names or any(self.contains_parameter(t,names) for t in typ.args) or any(self.contains_parameter(t,names) for _,t in typ.fields)
 
     def signature(self, node):
         receiver = node.value[4]
@@ -274,6 +281,7 @@ class ExtendedChecker(Checker):
                         dest = target.statics if 'static' in mods else target.fields
                         if name in dest: self.fail(n, 'duplicate field: ' + name)
                         dest[name] = self.declared_type(n,typ)
+                        if 'static' in mods and self.contains_parameter(dest[name],{p for p,_ in target.parameters}):self.fail(n,'static members cannot use instance type parameters')
                         if dest[name] == VOID: self.fail(n,'struct fields cannot be void')
                         target.access[('static' in mods,name)] = next((m for m in mods if m in ('private','protected')), 'public')
                         if 'readonly' in mods: target.readonly.add(('static' in mods,name))
@@ -333,7 +341,7 @@ class ExtendedChecker(Checker):
         if typ.name in visited: raise CompileError('cyclic inheritance: '+typ.name.rsplit('::',1)[-1])
         visited.add(typ.name)
         target = self.structs[typ.name]
-        mapping = self.mapping(typ)
+        mapping = {} if static else self.mapping(typ)
         result = {}
         bases = getattr(target,'bases',[]) if target.kind == 'interface' else [target.base] if target.base else []
         for base in bases:
@@ -462,9 +470,10 @@ class ExtendedChecker(Checker):
     def check_function(self, node):
         if id(node) in self.seen_functions: return self.signature(node)
         name, params, result, asynchronous, receiver = node.value
-        old = self.current_class,self.in_constructor,self.return_type,self.async_context,self.loop_depth,self.switch_depth
+        old = self.current_class,self.in_constructor,self.return_type,self.async_context,self.loop_depth,self.switch_depth,self.static_context
         self.current_class = self.type_names.get(receiver[1].split('<')[0]) if receiver else None
         self.in_constructor = name == 'constructor' and receiver is not None
+        self.static_context = 'static' in getattr(node,'modifiers',[])
         self.return_type, self.async_context,self.loop_depth,self.switch_depth = VOID,asynchronous,0,0
         try:
             with self.parameters(node,receiver[1] if receiver else None):
@@ -472,8 +481,8 @@ class ExtendedChecker(Checker):
                 with self.scope():
                     if receiver:
                         cls = self.structs[self.current_class]
-                        arguments = tuple(self.generic_context[p] for p,_ in cls.parameters)
                         static = 'static' in getattr(node,'modifiers',[])
+                        arguments = () if static else tuple(self.generic_context[p] for p,_ in cls.parameters)
                         self.bind(node,receiver[0],Type('constructor' if static else 'struct', self.current_class,arguments),True)
                         if self.in_constructor and cls.base:
                             if not node.children or not self.is_super_call(node.children[0]): self.fail(node, 'derived constructor must start with super()')
@@ -488,7 +497,7 @@ class ExtendedChecker(Checker):
                     if self.return_type != VOID and not self.terminates(node.children): self.fail(node,'missing return on some paths')
             self.seen_functions.add(id(node))
         finally:
-            self.current_class,self.in_constructor,self.return_type,self.async_context,self.loop_depth,self.switch_depth = old
+            self.current_class,self.in_constructor,self.return_type,self.async_context,self.loop_depth,self.switch_depth,self.static_context = old
         return self.signature(node)
 
     def required_fields(self,typ):
@@ -663,7 +672,10 @@ class ExtendedChecker(Checker):
             if v == 'undefined': return UNDEFINED
             if v == 'super':
                 if not self.current_class or not self.structs[self.current_class].base: self.fail(n,'super requires a derived class')
-                return self.structs[self.current_class].base
+                base=self.structs[self.current_class].base
+                if self.static_context:
+                    return Type('constructor',base.name,base.args) if base.kind=='struct' else self.foreign_constructor(base)
+                return base
             return super().expression(n)
         if k in ('optional_member','optional_index','optional_call'):
             base = self.expr(c[0])

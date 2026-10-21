@@ -105,6 +105,8 @@ console.log(read(State.Walk), d, Object.isFrozen(State))
 
 CASES['optional-method']=('type A struct {}\nfunc (a A) get() int { return 3 }\nfunc read(a A?) int { return a?.get() ?? 7 }\nconsole.log(read(nil), read(A{}))','7 3\n')
 CASES['recursive-alias']=('type Link = {value: int; next: Link?}\nvar x Link = {value: 3, next: nil}\nconsole.log(x.value)','3\n')
+CASES['static-generics']=('type C<T> struct {}\nstatic func (c C<T>) identity<T>(x T) T { return x }\nconsole.log(C.identity<int>(3))','3\n')
+CASES['static-super']=('type A struct {}\nstatic func (a A) get() int { return 2 }\ntype B struct extends A {}\nstatic override func (b B) get() int { return super.get() + 1 }\nconsole.log(B.get())','3\n')
 CASES['nullable-and']=('type A struct { Value int }\nfunc read(a A?) bool { return a != nil && a.Value > 0 }\nconsole.log(read(nil),read(A{Value: 3}))','false true\n')
 CASES['enum-keys']=('type Object struct {}\ntype Weird enum { __proto__; constructor }\nconsole.log(Weird.__proto__,Weird.constructor)','0 1\n')
 CASES['static-order']=('var count int = 3\ntype A struct { static Value int = count }\nconsole.log(A.Value)','3\n')
@@ -140,6 +142,8 @@ BAD=[
  'type A struct {}\nfunc (a A) f() int { return 1 }\nfunc read(a A?) { (a?.f)() }',
  'type A struct { X int }\nfunc read(a A?) { if a != nil { a = nil; console.log(a.X) } }',
  'switch 1 { case 1: callback := func() { break }; callback() }',
+ 'type A<T> struct { static Value T }',
+ 'type A<T> struct {}\nstatic func (a A<T>) get(value T) T { return value }',
  'type Empty = []void',
  'func invalid<T>(n void) {}',
  'type S enum { A; A }',
