@@ -172,3 +172,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Keep gscript module examples (the Python lib/ rule above otherwise ignores these).
+!examples/modules/lib/
+!examples/modules/lib/*.gos

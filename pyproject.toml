@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gscript-lang"
+version = "0.2.0"
+description = "Go-inspired syntax compiled to JavaScript ES modules"
+readme = "readme.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+gscript = "gscript.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["gscript*", "parser*"]

@@ -1,5 +1,7 @@
-let hoge string = "hoge"
-const foo int = 800
-const PI float = 3.14
-
-const fun string = str(3.14)
+var name string = "Sofia"
+const limit int = 3
+var total int
+for i := 0; i < limit; i++ {
+  total += i
+}
+console.log(name, total)

@@ -1,0 +1,6 @@
+import { twice } from "./lib/math.gos"
+import { Person } from "./lib/person.gos"
+
+// Imported JavaScript-compatible values currently cross an any boundary.
+p := new Person({Name: "Sofia"})
+console.log(p.Greet(), twice(21))

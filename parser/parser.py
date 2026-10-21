@@ -1,11 +1,4 @@
-from lark import Lark, Transformer
-from pathlib import Path
+"""Public parsing entry point for gscript."""
+from .compiler import CompileError, parse_code
 
-grammar_path = Path(__file__).parent / "new_grammar.lark"
-with open(grammar_path, "r", encoding="utf-8") as f:
-  grammar = f.read()
-
-parser = Lark(grammar, start="start", parser="lalr")
-
-def parse_code(code: str):
-  return parser.parse(code)
+__all__ = ['CompileError', 'parse_code']

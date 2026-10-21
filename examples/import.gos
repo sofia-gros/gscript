@@ -1,2 +1,4 @@
-import "http"
-import path from "pathlib"
+import { basename } from "node:path"
+import * as path from "node:path"
+import "node:fs"
+console.log(basename("/tmp/main.gos"), path.extname("main.gos"))

@@ -1,0 +1,11 @@
+async func loadText(url string) string {
+  res := await fetch(url)
+  return await res.text()
+}
+
+try {
+  text := await loadText("data:text/plain,Hello%20async")
+  console.log(text)
+} catch err {
+  console.log(err.message)
+}
