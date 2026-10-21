@@ -107,7 +107,7 @@ gs hello.gs --check
 
 構文エラー、未定義名、重複宣言、型の不一致、引数の個数、存在しないプロパティ・export、const の再代入、戻り値の漏れなどを検査します。失敗時はファイル・位置・ソース行を表示し、終了コード `1` を返します。引数の誤りは `2` です。型エラーがある場合、生成物を書き換えません。
 
-GS 同士のモジュールでは型情報を共有します。外部 JS / TS と node_modules は TypeScript の型情報・JSDoc・推論を使って検査します。明示的な `any` は動的な値として扱います。`any` を使っても未定義名の検査は無効になりません。
+GS 同士のモジュールでは型情報を共有します。外部 JS / TS と node_modules の型情報・JSDoc・推論結果を読み込み、GS自身の型検査器で検査します。明示的な `any` は動的な値として扱います。`any` を使っても未定義名の検査は無効になりません。
 
 ## モジュールを分ける
 
@@ -142,9 +142,37 @@ gs game.gs --check
 gs game.gs --format mjs --out-dir dist
 ```
 
-Phaser などの `.d.ts`、ローカル TypeScript、JavaScript の JSDoc を使い、引数・プロパティ・戻り値をコンパイル時に検査します。外部連携には Node.js 22 / 24 と TypeScript 5.9.3 が必要です。型検査キャッシュで再コンパイルを高速化します。
+Phaser などの `.d.ts`、ローカル TypeScript、JavaScript の JSDoc の型情報をGSに読み込み、引数・プロパティ・戻り値をGSコンパイラ自身が検査します。外部連携には Node.js 22 / 24 と TypeScript 5.9.3 が必要です。型検査キャッシュで再コンパイルを高速化します。
 
 [連携の具体例・出力配置・キャッシュ](docs/interop.md) · [v0.4 公開条件](docs/release-plan-v0.4.md)
+
+## 継承・interface・Generics
+
+```go
+type Entity interface {
+  get() int
+}
+
+type Container<T> struct {
+  Value T
+}
+
+func (c Container<T>) get() T {
+  return c.Value
+}
+
+var item Entity = Container<int>{Value: 42}
+console.log(item.get())
+```
+
+`struct extends`、constructor / super、override、interface / implements、`T?`、`?.` / `??`、Union・リテラル型、Generics・制約、switch、static、private / protected / readonly、型エイリアス、enumに対応します。これらのGSの型検査にTypeScriptを呼び出しません。外部型定義を読み込むアダプターと、生成TSの検証工程にはTypeScriptを使用します。
+
+```sh
+# 既存のnilの動作を維持する既定モードに加え、厳密なnull検査を選べます。
+gs main.gs --strict-null --check
+```
+
+[拡張言語仕様・初期化と互換性の規則](docs/language-v0.4-extensions.md)
 
 ## struct・配列・非同期処理
 

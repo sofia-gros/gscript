@@ -7,13 +7,19 @@ __all__ = ['CompileError', 'Compiler', 'compile_source', 'parse_code']
 
 
 class Compiler:
-    def compile(self, program, format='mjs'):
+    def compile(self, program, format='mjs', strict_null=False):
         if format not in ('js', 'mjs', 'ts'):
             raise CompileError(f'unsupported output format: {format}')
         for node in program.children:
             if node.kind == 'import' and decode_string(node.value[1]).endswith(('.gs', '.gos')):
                 raise CompileError('local GS imports require Project or build_project with a source path', node.line)
         try:
+            if strict_null or getattr(program, "extended", False):
+                from .extended_checker import ExtendedChecker
+                from .extended_emitter import ExtendedEmitter
+                checker = ExtendedChecker(strict_null=strict_null)
+                checker.run(program)
+                return ExtendedEmitter(format, checker).compile(program)
             checker = Checker()
             checker.run(program)
             return Emitter(format, checker).compile(program)
@@ -21,5 +27,5 @@ class Compiler:
             raise CompileError('source nesting exceeds compiler capacity') from error
 
 
-def compile_source(source, format='mjs'):
-    return Compiler().compile(parse_code(source), format)
+def compile_source(source, format='mjs', strict_null=False):
+    return Compiler().compile(parse_code(source), format, strict_null)

@@ -91,4 +91,6 @@ GS の nil は参照型の null です。TS 出力での null の非 null 表明
 
 ## GS 0.4 の外部型連携
 
-外部 import はプロジェクトのコンパイル時に TypeScript で検査します。外部型名・名前空間を GS の型注釈として使えます。詳細は [外部連携仕様](interop.md) を参照してください。従来の外部 import を一律 any とする記述は、ファイルを持たない compile_source API に限ります。
+外部 import は型定義を読み込み、GS自身がプロジェクトのコンパイル時に検査します。外部型名・名前空間を GS の型注釈として使えます。詳細は [外部連携仕様](interop.md) を参照してください。従来の外部 import を一律 any とする記述は、ファイルを持たない compile_source API に限ります。
+
+継承・interface・Genericsなどの追加構文と型規則は [v0.4拡張仕様](language-v0.4-extensions.md) を参照してください。

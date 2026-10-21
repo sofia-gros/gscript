@@ -40,8 +40,21 @@ def main():
             result = run(['node', str(entry)], cwd=root)
             if result.stdout != expected:
                 raise AssertionError(result.stdout)
+        advanced = ROOT / 'examples/advanced/main.gs'
+        for format in ('js', 'mjs', 'ts'):
+            output = root / ('advanced-' + format)
+            run([*compiler, str(advanced), '--format', format, '--out-dir', str(output)], cwd=root, env=environment)
+            entry = output / ('main.' + format)
+            if format == 'ts':
+                run(['node', str(ROOT / 'node_modules/typescript/bin/tsc'), str(entry),
+                     '--strict', '--target', 'ES2022', '--module', 'NodeNext',
+                     '--moduleResolution', 'NodeNext', '--outDir', str(root / 'advanced-js')], cwd=root)
+                (root / 'advanced-js/package.json').write_text('{"type":"module"}')
+                entry = root / 'advanced-js/main.js'
+            if run(['node', str(entry)], cwd=root).stdout != '42\n':
+                raise AssertionError('native GS language extension output failed')
         # Verify bundled bridge resources and existing project node_modules.
-        run([*compiler, str(ROOT / 'tests/fixtures/interop/phaser.gs'), '--check'], cwd=root, env=environment)
+        run([*compiler, str(ROOT / 'tests/fixtures/interop/phaser.gs'), '--check', '--no-cache'], cwd=root, env=environment)
         for format in ('js', 'mjs', 'ts'):
             external_output = root / ('external-' + format)
             run([*compiler, str(ROOT / 'tests/fixtures/interop/external-main.gs'), '--format', format,

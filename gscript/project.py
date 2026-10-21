@@ -41,7 +41,8 @@ class Module:
 
 
 class Project:
-    def __init__(self, entry, root=None, format='mjs', cache=True, cache_dir=None, typescript=None):
+    def __init__(self, entry, root=None, format='mjs', cache=True, cache_dir=None, typescript=None, strict_null=False):
+        self.strict_null = strict_null
         self.format = format
         self.interop_options = {'cache': cache, 'cache_dir': cache_dir, 'typescript': typescript}
         self.has_external = False
@@ -52,6 +53,7 @@ class Project:
         self.modules = {}
         self.order = []
         self._load(self.entry)
+        self.extended = strict_null or self.has_external or any(getattr(m.program, "extended", False) for m in self.modules.values())
 
     def _located(self, source, action):
         try:
@@ -113,13 +115,32 @@ class Project:
             stack.extend((dependency, False) for dependency in reversed(dependencies))
 
     def check(self):
+        try:
+            return self._check()
+        finally:
+            if getattr(self,"declarations",None): self.declarations.close()
+
+    def _check(self):
+        if self.extended and self.has_external:
+            from .declarations import Declarations
+            self.declarations = Declarations(self)
         structs = {}
         exports = {str(path): module.exports for path, module in self.modules.items()}
         # Declare nominal struct identities first, so signatures can reference
         # local/imported types even through a cyclic import graph.
         for module in self.modules.values():
-            checker = module.checker = Checker(str(module.source), structs, module.exports, exports)
+            if self.extended:
+                from parser.extended_checker import ExtendedChecker
+                checker = module.checker = ExtendedChecker(str(module.source), structs, module.exports, exports, strict_null=self.strict_null)
+            else:
+                checker = module.checker = Checker(str(module.source), structs, module.exports, exports)
+            if self.extended:
+                checker.declarations = getattr(self,"declarations",None)
+                checker.defer_validation = True
             self._located(module.source, lambda: checker.declare_structs(module.program.children, module=True))
+        if self.extended:
+            definitions = {k:v for m in self.modules.values() for k,v in m.checker.type_defs.items()}
+            for m in self.modules.values(): m.checker.type_defs = definitions
         for module in self.modules.values():
             for node in module.program.children:
                 if node.kind == 'default' and node.children[0].kind == 'name':
@@ -137,6 +158,14 @@ class Project:
                     self._located(module.source, lambda: setattr(module.exports[node.value[1]], 'typ', checker.declared_type(node, node.value[2])))
             self._located(module.source, lambda: checker.declare_signatures(module.program.children, module=True))
             checker.prepared.add('module')
+        if self.extended:
+            for module in self.modules.values():
+                checker=module.checker
+                checker.prepare_static_order()
+                for original in module.program.children:
+                    node=unwrap(original)
+                    if node.kind=='struct':self._located(module.source,lambda:checker.validate_inheritance(node))
+                    elif node.kind=='interface':self._located(module.source,lambda:checker.members(Type('interface',checker.type_names[node.value[0]])))
         # Top-level values are inferred in dependency order; bodies are checked
         # after all inferred export types are known, including recursive functions.
         for module in self.order:
@@ -176,7 +205,13 @@ class Project:
                 node.external_typed = True
                 checker.prepared.add(id(node))
                 for local in import_names(node.value[0]):
-                    checker.bind(node, local, EXTERNAL, True, 'external')
+                    typ = self.declarations.resolve(module.source,local)[0] if self.extended else EXTERNAL
+                    if self.extended:
+                        value_type,declared_type=self.declarations.resolve(module.source,local)
+                        if value_type==ANY and declared_type!=ANY:
+                            if not hasattr(checker,'type_only_names'):checker.type_only_names=set()
+                            checker.type_only_names.add(local)
+                    checker.bind(node, local, typ, True, 'external')
                 continue
             checker.prepared.add(id(node))
             binding = node.value[0]
@@ -187,7 +222,7 @@ class Project:
                 name = binding.split()[-1]
                 checker.bind(node, name, Type('namespace', str(dependency)), True, 'import')
                 for exported, symbol in target.items():
-                    if symbol.typ.kind == 'constructor':
+                    if symbol.typ.kind in ('constructor','type','enum'):
                         checker.type_names[name + '.' + exported] = symbol.typ.name
                 continue
             if binding.startswith('{'):
@@ -200,7 +235,7 @@ class Project:
                     checker.fail(node, f'module {dependency.name} has no export: {exported}')
                 checker.bind(node, local, target[exported].typ, True, 'import')
                 checker.scopes[0][local].target = target[exported]
-                if target[exported].typ.kind == 'constructor':
+                if target[exported].typ.kind in ('constructor', 'type', 'enum'):
                     if local in {'int', 'float', 'float64', 'number', 'string', 'bool', 'boolean', 'any', 'object', 'void', 'Promise'}:
                         checker.fail(node, f'reserved type name: {local}')
                     checker.type_names[local] = target[exported].typ.name
@@ -228,6 +263,9 @@ class Project:
                 specifier = str(target) + '.' + extension
                 specifier = specifier.replace(os.sep, '/')
                 node.value = (binding, json.dumps(specifier if specifier.startswith('.') else './' + specifier))
+            if self.extended:
+                from parser.extended_emitter import ExtendedEmitter
+                return ExtendedEmitter(format=format, checker=module.checker, checking=checking).compile(module.program)
             return Emitter(format=format, checker=module.checker, checking=checking).compile(module.program)
         finally:
             for node, value in original_values:
@@ -248,10 +286,10 @@ def module_marker(directory):
     return marker
 
 
-def build_project(entry, out_dir, root=None, format='mjs', check_only=False, cache=True, cache_dir=None, typescript=None):
+def build_project(entry, out_dir, root=None, format='mjs', check_only=False, cache=True, cache_dir=None, typescript=None, strict_null=False):
     if format not in FORMATS:
         raise CompileError(f'unsupported output format: {format}')
-    project = Project(entry, root, format, cache, cache_dir, typescript).check()
+    project = Project(entry, root, format, cache, cache_dir, typescript, strict_null).check()
     if check_only:
         return None
     out_dir = Path(out_dir).resolve()

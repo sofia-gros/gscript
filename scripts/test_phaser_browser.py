@@ -21,7 +21,7 @@ def main():
         raise SystemExit('Chromium or Google Chrome is required for the Phaser browser release gate')
     version = json.loads((ROOT / 'node_modules/phaser/package.json').read_text())['version']
     with tempfile.TemporaryDirectory() as directory:
-        output = build_project(ROOT / 'tests/fixtures/interop/phaser.gs', Path(directory))
+        output = build_project(ROOT / 'tests/fixtures/interop/phaser-scene.gs', Path(directory))
         routes = {
             '/': ('text/html', b'<!doctype html><html><body><script type="importmap">{"imports":{"phaser":"/phaser.mjs"}}</script><script type="module" src="/app.mjs"></script></body></html>'),
             '/app.mjs': ('text/javascript', output.read_bytes()),

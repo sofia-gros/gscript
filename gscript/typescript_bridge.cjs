@@ -114,7 +114,7 @@ while (queue.length) {
 }
 const program = ts.createProgram(request.sources.map(s => s.fileName), options, host);
 const implicitJs = new Set([7005, 7006, 7010, 7019, 7031, 7034, 7044]);
-const diagnostics = [...configErrors, ...ts.getPreEmitDiagnostics(program)]
+const diagnostics = [...configErrors, ...program.getSyntacticDiagnostics().filter(d => !d.file || !virtual.has(key(d.file.fileName)))]
   .filter(d => !(d.file && /\.[cm]?jsx?$/.test(d.file.fileName) && implicitJs.has(d.code)));
 function diagnostic(d) {
   const message = ts.flattenDiagnosticMessageText(d.messageText, '\n');

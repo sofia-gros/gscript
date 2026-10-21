@@ -63,7 +63,8 @@ class ExternalChecker:
                             'text': self.project.emit(module, 'ts', checking=True),
                             'runtimeText': self.project.emit(module, 'ts', runtime_format=self.format)})
         request = {'typescript': str(ts), 'entry': str(self.project.entry),
-                   'root': str(self.project.root), 'sources': sources, 'format': self.format}
+                   'root': str(self.project.root), 'sources': sources, 'format': self.format,
+                   'nativeChecked': getattr(self.project,'extended',False)}
         identity = json.dumps(request, sort_keys=True, ensure_ascii=True) + bridge + _digest(ts)
         key = hashlib.sha256(identity.encode()).hexdigest()
         cache_file = self.cache_dir / 'v0.4' / (key + '.json')

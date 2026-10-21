@@ -17,6 +17,7 @@ def main(argv=None, default_source=None):
     output.add_argument('--out-dir', type=Path, help='build the complete local GS module graph')
     output.add_argument('--check', action='store_true', help='check the module graph without writing output')
     parser.add_argument('--root', type=Path, help='source root (default: entry directory)')
+    parser.add_argument('--strict-null', action='store_true', help='reject nil for non-nullable types')
     parser.add_argument('--typescript', type=Path, help='TypeScript compiler package or lib/typescript.js')
     parser.add_argument('--no-cache', action='store_true', help='disable the external type-checking cache')
     parser.add_argument('--cache-dir', type=Path, help='external type-checking cache directory')
@@ -37,9 +38,9 @@ def main(argv=None, default_source=None):
         parser.error('output extension must match --format')
     try:
         if args.out_dir:
-            build_project(args.source, args.out_dir, args.root, format, cache=not args.no_cache, cache_dir=args.cache_dir, typescript=args.typescript)
+            build_project(args.source, args.out_dir, args.root, format, cache=not args.no_cache, cache_dir=args.cache_dir, typescript=args.typescript, strict_null=args.strict_null)
             return 0
-        project = Project(args.source, args.root, format, cache=not args.no_cache, cache_dir=args.cache_dir, typescript=args.typescript).check()
+        project = Project(args.source, args.root, format, cache=not args.no_cache, cache_dir=args.cache_dir, typescript=args.typescript, strict_null=args.strict_null).check()
         if args.check:
             return 0
         if len(project.modules) > 1 or (project.has_external and project._external_result(format).get('files')):

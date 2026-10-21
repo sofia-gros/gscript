@@ -28,7 +28,7 @@ class Token:
     column: int = 1
 
 
-TOKEN = re.compile(r'(?P<space>[^\S\n]+)|(?P<comment>//[^\n]*|/\*[\s\S]*?\*/)|(?P<nl>\n)|(?P<string>"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\')|(?P<number>\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)|(?P<op>\.\.\.|:=|==|!=|<=|>=|&&|\|\||\+\+|--|\+=|-=|[{}()\[\].,:;=+*/%!<>?-])')
+TOKEN = re.compile(r'(?P<space>[^\S\n]+)|(?P<comment>//[^\n]*|/\*[\s\S]*?\*/)|(?P<nl>\n)|(?P<string>"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\')|(?P<number>\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)|(?P<op>\.\.\.|\?\.|\?\?|:=|==|!=|<=|>=|&&|\|\||\+\+|--|\+=|-=|[{}()\[\].,:;=+*/%!<>?|&-])')
 
 
 def decode_string(text):
@@ -93,7 +93,7 @@ def tokenize(source):
             elif text in (')', ']', '}'):
                 if delimiters:
                     delimiters.pop()
-            can_end = kind in ('name', 'number', 'string') or text in (')', ']', '}', '++', '--')
+            can_end = kind in ('name', 'number', 'string') or text in (')', ']', '}', '++', '--', '?')
         if '\n' in text:
             line += text.count('\n')
             line_start = pos + text.rfind('\n') + 1
@@ -169,9 +169,9 @@ class Parser:
             if self.at('<eof>'):
                 self.fail(f'expected {end!r}')
             nodes.append(self.statement())
-            if not self.at(end) and not self.at(';'):
+            if not self.at(end) and not self.at(';') and not (self.i and self.tokens[self.i-1].line < self.token.line):
                 # Block declarations delimit themselves; expressions do not.
-                if (nodes[-1].children[0].kind if nodes[-1].kind == 'export' else nodes[-1].kind) not in ('func', 'struct', 'if', 'for', 'range', 'try'):
+                if (nodes[-1].children[0].kind if nodes[-1].kind == 'export' else nodes[-1].kind) not in ('func', 'struct', 'interface', 'enum', 'switch', 'if', 'for', 'range', 'try'):
                     self.fail('expected newline or semicolon')
             self.separators()
         return nodes
@@ -370,7 +370,8 @@ class Parser:
     def expression(self, minimum=0, composite=True):
         line = self.token.line
         word = self.token.text
-        if word in ('!', '-', '+', 'await'):
+        if word in ('!', '-', '+', 'await', 'typeof'):
+            if word == 'typeof': self.extended = True
             self.take()
             left = Node('unary', word, [self.expression(7, composite)], line)
         elif word == 'func':
@@ -383,13 +384,22 @@ class Parser:
             name = self.name()
             while self.accept('.'):
                 name += '.' + self.name()
+            type_args = []
+            if self.accept('<'):
+                self.extended = True
+                type_args.append(self.type_name())
+                while self.accept(','): type_args.append(self.type_name())
+                self.take('>')
             self.take('(')
             left = Node('new', name, self.list_values(')'), line)
+            left.type_args = type_args
         elif self.accept('('):
             self.separators()
             left = self.expression()
             self.separators()
             self.take(')')
+            left.parenthesized = True
+            left.optional_chain = False
         elif self.accept('['):
             self.take(']')
             typ = self.type_name()
@@ -405,19 +415,37 @@ class Parser:
         else:
             self.fail('expected expression')
         while True:
+            if hasattr(self, 'postfix_binary'):
+                updated = self.postfix_binary(left, minimum, composite)
+                if updated is not left:
+                    left = updated
+                    continue
             if self.accept('.'):
+                previous=left
                 left = Node('member', self.name(), [left], line)
+                left.optional_chain=not getattr(previous,'parenthesized',False) and (previous.kind.startswith('optional_') or getattr(previous,'optional_chain',False))
             elif self.accept('('):
+                previous=left
                 left = Node('call', children=[left, *self.list_values(')')], line=line)
+                left.optional_chain=not getattr(previous,'parenthesized',False) and (previous.kind.startswith('optional_') or getattr(previous,'optional_chain',False))
             elif self.accept('['):
                 index = self.expression()
                 self.take(']')
+                previous=left
                 left = Node('index', children=[left, index], line=line)
-            elif composite and left.kind == 'name' and self.accept('{'):
-                left = Node('composite', left.value, self.properties(), line)
+                left.optional_chain=not getattr(previous,'parenthesized',False) and (previous.kind.startswith('optional_') or getattr(previous,'optional_chain',False))
+            elif composite and left.kind in ('name', 'type_apply') and self.accept('{'):
+                applied = left if left.kind == 'type_apply' else None
+                left = Node('composite', applied.children[0].value if applied else left.value, self.properties(), line)
+                left.type_args = applied.value if applied else []
             elif self.token.text in self.PRECEDENCE and self.PRECEDENCE[self.token.text] >= minimum:
                 op = self.take()
+                if op in ('??', 'instanceof'): self.extended = True
                 right = self.expression(self.PRECEDENCE[op] + 1, composite)
+                if op in ('??','&&','||'):
+                    for operand in (left,right):
+                        if operand.kind=='binary' and not getattr(operand,'parenthesized',False) and ((op=='??' and operand.value in ('&&','||')) or (op in ('&&','||') and operand.value=='??')):
+                            self.fail('parentheses are required when mixing ?? with && or ||')
                 left = Node('binary', op, [left, right], line)
             else:
                 break
@@ -461,8 +489,10 @@ class Parser:
 
 def parse_code(source):
     try:
-        parser = Parser(source)
+        from .extended_parser import ExtendedParser
+        parser = ExtendedParser(source)
         program = Node('program', children=parser.program())
+        program.extended = parser.extended
         program.identifiers = frozenset(token.text for token in parser.tokens if token.kind == 'name')
         return program
     except RecursionError as error:

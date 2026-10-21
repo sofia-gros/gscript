@@ -17,6 +17,9 @@ class Type:
     fields: tuple = ()
 
     def __str__(self):
+        if self.kind=='foreign':return 'external type'
+        if self.kind=='union':return ' | '.join(map(str,self.args))
+        if self.kind=='literal':return self.name
         if self.kind == 'array':
             return '[]' + str(self.args[0])
         if self.kind == 'promise':

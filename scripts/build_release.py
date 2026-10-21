@@ -32,6 +32,7 @@ def build_native(output):
     subprocess.run([sys.executable, '-m', 'PyInstaller', '--clean', '--noconfirm',
                     '--onefile', '--name', 'gs', '--paths', str(ROOT),
                     '--add-data', str(ROOT / 'gscript/typescript_bridge.cjs') + os.pathsep + 'gscript',
+                    '--add-data', str(ROOT / 'gscript/declarations.cjs') + os.pathsep + 'gscript',
                     '--distpath', str(build / 'bin'), '--workpath', str(build / 'work'),
                     '--specpath', str(build), str(ROOT / 'scripts/compiler_entry.py')], check=True)
     executable = build / 'bin' / ('gs.exe' if sys.platform == 'win32' else 'gs')

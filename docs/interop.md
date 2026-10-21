@@ -1,7 +1,7 @@
 # JavaScript / TypeScript 連携（GS 0.4）
 
 GS の構文を増やさず、既存の import と型注釈を外部モジュールにも利用できます。
-CLI と `gscript.project.Project` / `build_project` は、外部 import がある場合に TypeScript のコンパイラ API で型を検査します。ファイルを持たない `compile_source` は GS 単体の変換 API です。外部モジュールの解決にはプロジェクト API を使ってください。
+CLI と `gscript.project.Project` / `build_project` は、外部 import がある場合に 外部の型定義を読み込み、GS自身の型検査器でGSコードを検査します。TypeScript APIは外部のJS/TS・型定義の読み取りと変換に利用し、GSの型検査を委譲しません。ファイルを持たない `compile_source` は GS 単体の変換 API です。外部モジュールの解決にはプロジェクト API を使ってください。
 
 ```sh
 npm install --save-dev typescript@5.9.3
@@ -36,11 +36,11 @@ game := new Phaser.Game(config)
 
 外部 import の検査には Node.js 22 / 24 と TypeScript 5.9.3 が必要です。TypeScript は入力プロジェクトの `node_modules` を親方向に探索します。`--typescript PATH` でパッケージディレクトリまたは `lib/typescript.js` を明示できます。GS だけのプロジェクトは Node / TypeScript を起動しません。
 
-検査結果はプロジェクトルートの `.gs-cache/v0.4` に保存します。GS、外部ソース、型定義、設定、パッケージ解決結果、TypeScript とブリッジの内容を検証して再利用します。探索時に存在しなかった型定義が追加された場合も無効化します。時刻だけの比較はしません。キャッシュ破損や書き込み不可では再検査します。
+外部型のメタデータは `.gs-cache/v0.4-native`、変換結果は `.gs-cache/v0.4` に保存します。GS自身の型検査は毎回実行します。GS、外部ソース、型定義、設定、パッケージ解決結果、TypeScript とブリッジの内容を検証して再利用します。探索時に存在しなかった型定義が追加された場合も無効化します。時刻だけの比較はしません。キャッシュ破損や書き込み不可では再検査します。
 
 ```sh
 gs game.gs --check --no-cache
 gs game.gs --check --cache-dir .cache/gs
 ```
 
-速度は `python scripts/benchmark.py --modules 100 --runs 7` で測定できます。同じ環境の測定で、100 GS モジュールの中央値は v0.3 の 15.1 ms から 11.7 ms、実際の Phaser 型検査は初回 1.45 s・キャッシュ利用時 32.4 ms でした。これは測定例であり、環境や依存により変わります。
+速度は `python scripts/benchmark.py --modules 100 --runs 7` で測定できます。測定結果は環境や依存により変わります。外部型メタデータのキャッシュ利用時は型定義読み込み用のNodeプロセスを省略し、GSの検査は省略しません。

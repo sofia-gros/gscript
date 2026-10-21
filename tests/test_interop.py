@@ -87,7 +87,7 @@ console.log(twice(p.x))
             self.assertEqual(self.execute(output), '6\n')
             self.assertTrue((root / 'out/lib.mjs').exists())
             entry.write_text('import { twice } from "./lib.js"\ntwice("bad")')
-            with self.assertRaisesRegex(CompileError, 'TS2345') as failure:
+            with self.assertRaisesRegex(CompileError, 'type mismatch') as failure:
                 self.build(entry, root / 'bad')
             self.assertTrue(os.path.samefile(failure.exception.filename, entry))
             self.assertEqual(failure.exception.line, 2)
@@ -134,7 +134,7 @@ console.log(twice(box.value), box.scale(2), identity("typed"))
             state = declaration.stat()
             declaration.write_text(declaration.read_text().replace('twice(value: number)', 'twice(value: string)'))
             os.utime(declaration, ns=(state.st_atime_ns, state.st_mtime_ns))
-            with self.assertRaisesRegex(CompileError, 'TS2345'):
+            with self.assertRaisesRegex(CompileError, 'type mismatch'):
                 self.check(entry)
 
     def test_cache_invalidation_when_missing_module_types_are_added(self):
@@ -146,7 +146,7 @@ console.log(twice(box.value), box.scale(2), identity("typed"))
             self.check(entry)
             self.assertTrue(self.check(entry).interop_stats['cache_hit'])
             (root / 'lib.d.ts').write_text('export function f(value: string): string;')
-            with self.assertRaisesRegex(CompileError, 'TS2345'):
+            with self.assertRaisesRegex(CompileError, 'type mismatch'):
                 self.check(entry)
 
     def test_no_cache_and_corrupted_cache(self):
@@ -158,7 +158,7 @@ console.log(twice(box.value), box.scale(2), identity("typed"))
             self.assertFalse(self.check(entry, cache=False).interop_stats['cache_hit'])
             self.assertFalse((root / '.gs-cache').exists())
             self.check(entry)
-            cache = next((root / '.gs-cache').rglob('*.json'))
+            cache = next((root / '.gs-cache' / 'v0.4').glob('*.json'))
             cache.write_text('{broken')
             self.assertFalse(self.check(entry).interop_stats['cache_hit'])
 
@@ -217,7 +217,7 @@ console.log(twice(box.value), box.scale(2), identity("typed"))
         with tempfile.TemporaryDirectory() as directory:
             entry = Path(directory) / 'main.gs'
             entry.write_text('import "missing-gs-fixture-package"')
-            with self.assertRaisesRegex(CompileError, 'TS2307'):
+            with self.assertRaisesRegex(CompileError, 'Cannot find module'):
                 self.check(entry)
 
     def test_tsconfig_paths_aliases_are_rewritten_for_runtime(self):
@@ -252,7 +252,7 @@ console.log(twice(box.value), box.scale(2), identity("typed"))
             self.check(entry, cache_dir=blocked)
             self.assertEqual(blocked.read_text(), 'preserve')
             self.check(entry)
-            cache = next((root / '.gs-cache').rglob('*.json'))
+            cache = next((root / '.gs-cache' / 'v0.4').glob('*.json'))
             data = json.loads(cache.read_text())
             data['result'] = 3
             cache.write_text(json.dumps(data))
