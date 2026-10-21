@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
+from urllib.parse import urlparse, parse_qs
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -22,8 +24,16 @@ def main():
     version = json.loads((ROOT / 'node_modules/phaser/package.json').read_text())['version']
     with tempfile.TemporaryDirectory() as directory:
         output = build_project(ROOT / 'tests/fixtures/interop/phaser-scene.gs', Path(directory))
+        ready=threading.Event()
+        reports=[]
+        observer=b'''<script>
+function report(){if(document.body.dataset.result){fetch('/__result?value='+encodeURIComponent(document.body.dataset.result));return true;}return false;}
+new MutationObserver(report).observe(document.body,{attributes:true});
+addEventListener('error',e=>{if(e.message)fetch('/__error?value='+encodeURIComponent(e.message));});
+addEventListener('unhandledrejection',e=>fetch('/__error?value='+encodeURIComponent(String(e.reason))));
+</script>'''
         routes = {
-            '/': ('text/html', b'<!doctype html><html><body><script type="importmap">{"imports":{"phaser":"/phaser.mjs"}}</script><script type="module" src="/app.mjs"></script></body></html>'),
+            '/': ('text/html', b'<!doctype html><html><body>'+observer+b'<script type="importmap">{"imports":{"phaser":"/phaser.mjs"}}</script><script type="module" src="/app.mjs"></script></body></html>'),
             '/app.mjs': ('text/javascript', output.read_bytes()),
             '/phaser.mjs': ('text/javascript', b'import * as Phaser from "/engine.js"; export default Phaser;'),
             '/engine.js': ('text/javascript', (ROOT / 'node_modules/phaser/dist/phaser.esm.js').read_bytes()),
@@ -32,6 +42,13 @@ def main():
             def log_message(self, *args):
                 pass
             def do_GET(self):
+                parsed=urlparse(self.path)
+                if parsed.path in ('/__result','/__error'):
+                    reports.append((parsed.path,parse_qs(parsed.query).get('value',[''])[0]))
+                    self.send_response(204)
+                    self.end_headers()
+                    ready.set()
+                    return
                 route = routes.get(self.path.split('?')[0])
                 if route is None:
                     self.send_error(404)
@@ -46,24 +63,28 @@ def main():
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            process = subprocess.Popen([browser, '--headless', '--no-sandbox', '--disable-gpu',
-                                     '--user-data-dir=' + str(Path(directory) / 'browser-profile'),
-                                     '--disable-dev-shm-usage', '--disable-background-networking',
-                                     '--no-first-run', '--no-default-browser-check',
-                                     '--virtual-time-budget=5000', '--dump-dom',
-                                     f'http://127.0.0.1:{server.server_port}/'],
-                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
-                                    env={**os.environ, "XDG_CACHE_HOME": str(Path(directory) / "cache"),
-                                         "XDG_CONFIG_HOME": str(Path(directory) / "config")})
-            try:
-                stdout, stderr = process.communicate(timeout=40)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.communicate(timeout=5)
-                raise RuntimeError("Chromium did not finish the Phaser browser test within 40 seconds")
-            result = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
-            if result.returncode or f'data-result="phaser:{version}"' not in result.stdout:
-                raise RuntimeError('Phaser scene did not boot:\n' + result.stdout + '\n' + result.stderr[-4000:])
+            with (Path(directory)/'browser.log').open('w+',encoding='utf-8') as log:
+                process=subprocess.Popen([browser,'--headless','--no-sandbox','--disable-gpu',
+                    '--user-data-dir='+str(Path(directory)/'browser-profile'),
+                    '--disable-dev-shm-usage','--disable-background-networking',
+                    '--no-first-run','--no-default-browser-check',
+                    f'http://127.0.0.1:{server.server_port}/'],
+                    stdout=subprocess.DEVNULL,stderr=log,start_new_session=True,
+                    env={**os.environ,'XDG_CACHE_HOME':str(Path(directory)/'cache'),
+                         'XDG_CONFIG_HOME':str(Path(directory)/'config')})
+                try:
+                    deadline=time.monotonic()+40
+                    while not ready.wait(0.1) and time.monotonic()<deadline:
+                        if process.poll() is not None:break
+                finally:
+                    try:os.killpg(process.pid,signal.SIGTERM)
+                    except ProcessLookupError:pass
+                    try:process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid,signal.SIGKILL);process.wait(timeout=5)
+                if not reports or reports[0]!=('/__result',f'phaser:{version}'):
+                    log.seek(0)
+                    raise RuntimeError('Phaser scene did not report successful startup: '+repr(reports)+'\n'+log.read()[-6000:])
         finally:
             server.shutdown()
             server.server_close()
