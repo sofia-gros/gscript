@@ -14,6 +14,7 @@ def main():
     executable=Path(sys.argv[1]).resolve()
     command=([sys.executable] if executable.suffix=='.pyz' else [])+[str(executable),'--stdio']
     with tempfile.TemporaryDirectory() as directory:
+        directory=str(Path(directory).resolve())
         uri=(Path(directory)/'main.gs').as_uri()
         messages=[{'id':1,'method':'initialize','params':{'rootUri':Path(directory).as_uri()}},
                   {'method':'textDocument/didOpen','params':{'textDocument':{'uri':uri,'version':1,'text':'var value int = "wrong"'}}},

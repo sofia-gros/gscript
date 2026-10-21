@@ -74,6 +74,12 @@ class LanguageServerTests(unittest.TestCase):
         self.server.handle('textDocument/didChange',{'textDocument':{'uri':self.uri,'version':2},'contentChanges':[{'text':'import { n } from "./missing.gs"'}]})
         self.assertIn('module not found',self.errors()[0]['message'])
 
+    def test_diagnostics_preserve_client_uri_spelling(self):
+        uri=self.uri.replace('file://','file://localhost')
+        self.open('var n int = "bad"',uri)
+        self.assertIn('type mismatch',self.errors(uri)[0]['message'])
+        self.assertFalse(any(e['params'].get('uri')==self.uri for e in self.events))
+
     def test_stdio_protocol_lifecycle_and_unicode_byte_lengths(self):
         messages=[{'id':1,'method':'initialize','params':{'rootUri':self.root.as_uri()}},
                   {'method':'textDocument/didOpen','params':{'textDocument':{'uri':self.uri,'version':1,'text':'var message string = "日本😀"'}}},

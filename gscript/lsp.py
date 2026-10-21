@@ -81,7 +81,7 @@ class Server:
                 self.projects[uri] = project
             except (CompileError, OSError, UnicodeError, ValueError) as error:
                 filename = Path(getattr(error,'filename',None) or path).resolve()
-                target = filename.as_uri()
+                target = next((open_uri for open_uri in self.documents if path_from_uri(open_uri)==filename),filename.as_uri())
                 text = sources.get(filename, '')
                 if not text:
                     try:text = filename.read_text(encoding='utf-8')

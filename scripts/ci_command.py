@@ -13,7 +13,7 @@ def main():
         tail.append(line)
     result = process.wait()
     if result:
-        message = ''.join(tail)[-12000:]
+        message = ''.join(tail)[-3500:]
         message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
         print('::error title=Compiler validation failed::' + message, flush=True)
     return result
