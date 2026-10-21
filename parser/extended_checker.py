@@ -462,10 +462,10 @@ class ExtendedChecker(Checker):
     def check_function(self, node):
         if id(node) in self.seen_functions: return self.signature(node)
         name, params, result, asynchronous, receiver = node.value
-        old = self.current_class,self.in_constructor,self.return_type,self.async_context,self.loop_depth
+        old = self.current_class,self.in_constructor,self.return_type,self.async_context,self.loop_depth,self.switch_depth
         self.current_class = self.type_names.get(receiver[1].split('<')[0]) if receiver else None
         self.in_constructor = name == 'constructor' and receiver is not None
-        self.return_type, self.async_context,self.loop_depth = VOID,asynchronous,0
+        self.return_type, self.async_context,self.loop_depth,self.switch_depth = VOID,asynchronous,0,0
         try:
             with self.parameters(node,receiver[1] if receiver else None):
                 self.return_type = self.declared_type(node,result)
@@ -488,7 +488,7 @@ class ExtendedChecker(Checker):
                     if self.return_type != VOID and not self.terminates(node.children): self.fail(node,'missing return on some paths')
             self.seen_functions.add(id(node))
         finally:
-            self.current_class,self.in_constructor,self.return_type,self.async_context,self.loop_depth = old
+            self.current_class,self.in_constructor,self.return_type,self.async_context,self.loop_depth,self.switch_depth = old
         return self.signature(node)
 
     def required_fields(self,typ):

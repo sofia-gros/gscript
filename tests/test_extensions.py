@@ -139,6 +139,7 @@ BAD=[
  'type E interface {}\nconsole.log(E)',
  'type A struct {}\nfunc (a A) f() int { return 1 }\nfunc read(a A?) { (a?.f)() }',
  'type A struct { X int }\nfunc read(a A?) { if a != nil { a = nil; console.log(a.X) } }',
+ 'switch 1 { case 1: callback := func() { break }; callback() }',
  'type Empty = []void',
  'func invalid<T>(n void) {}',
  'type S enum { A; A }',
