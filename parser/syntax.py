@@ -456,4 +456,3 @@ class Parser:
 def parse_code(source):
     parser = Parser(source)
     return Node('program', children=parser.program())
-
