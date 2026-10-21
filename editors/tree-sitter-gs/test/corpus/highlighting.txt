@@ -1,0 +1,20 @@
+==================
+GS lexical boundaries and optional access
+==================
+typeValue := "a" // comment
+n := x?.value ?? 3
+
+---
+
+(source_file
+  (identifier)
+  (operator)
+  (string)
+  (comment)
+  (identifier)
+  (operator)
+  (identifier)
+  (operator)
+  (identifier)
+  (operator)
+  (number))
