@@ -4,6 +4,7 @@ import re
 
 from .checker import unwrap, Type, Checker, ANY, EXTERNAL, is_external
 from .syntax import decode_string
+from .builtins import REGISTRY
 
 
 def indent(code):
@@ -41,6 +42,7 @@ class Emitter:
         order = {'import': 0, 'struct': 1, 'func': 2}
         nodes = sorted(program.children, key=lambda n: order.get(unwrap(n).kind, 3))
         body = '\n\n'.join(filter(None, (self.statement(node) for node in nodes))) + '\n'
+        if getattr(program,'trailing_comments',None):body+='\n'.join(program.trailing_comments)+'\n'
         return '\n'.join(self.helpers) + '\n' + body if self.helpers else body
 
     def ts_type(self, typ):
@@ -50,6 +52,7 @@ class Emitter:
             return 'any'
         if typ.kind == 'bool':
             return 'boolean'
+        if typ.kind in ('int','float'):return 'number'
         if typ.kind in ('number', 'string', 'void', 'null'):
             return typ.kind
         if typ.kind == 'array':
@@ -117,8 +120,40 @@ class Emitter:
             return f'(/*__GS_LINE_{node.line}__*/ {code})'
         return code
 
+    def precedence(self,node):
+        if node.kind=='binary':return {'??':2,'||':3,'&&':4,'==':8,'!=':8,'<':9,'>':9,'<=':9,'>=':9,'instanceof':9,'+':11,'-':11,'*':12,'/':12,'%':12}.get(node.value,1)
+        if node.kind=='unary':return 14
+        return 18
+
+    def operand(self,node,priority,right=False,operator=None):
+        code=self.expr(node)
+        wrap=self.precedence(node)<priority or right and self.precedence(node)==priority
+        if node.kind=='binary' and operator and (operator=='??' and node.value in ('&&','||') or node.value=='??' and operator in ('&&','||')):wrap=True
+        return '('+code+')' if wrap else code
+
+    def clean_expression(self,node):
+        k,v,c=node.kind,node.value,node.children
+        if k=='binary':
+            op={'==':'===','!=':'!=='}.get(v,v);priority=self.precedence(node)
+            return self.operand(c[0],priority,operator=v)+' '+op+' '+self.operand(c[1],priority,True,v)
+        if k=='member':
+            base=self.operand(c[0],17)
+            if c[0].kind=='number':base='('+base+')'
+            return base+'.'+v
+        if k=='index':return self.operand(c[0],17)+'['+self.expr(c[1])+']'
+        if k=='call':
+            if getattr(node,'builtin_call',None)=='len':return self.operand(c[1],17)+'.'+node.length_property
+            return self.operand(c[0],17)+'('+', '.join(self.expr(a) for a in c[1:])+')'
+        if k=='unary':
+            space=' ' if v in ('await','typeof') or v in ('+','-') and c[0].kind=='unary' else ''
+            return v+space+self.operand(c[0],14)
+        return None
+
     def expression(self, node):
         k, v, c = node.kind, node.value, node.children
+        if not self.checking:
+            clean=self.clean_expression(node)
+            if clean is not None:return clean
         if k == 'string':
             return json.dumps(decode_string(v))
         if k == 'number':
@@ -126,7 +161,7 @@ class Emitter:
         if k == 'name':
             if self.format == 'ts' and v in ('nil', 'null'):
                 return 'null!'
-            return 'console.log' if getattr(node, 'builtin', False) else {'nil': 'null'}.get(v, getattr(node, 'resolved_name', v))
+            return REGISTRY[node.builtin].javascript if getattr(node, 'builtin', None) else {'nil': 'null'}.get(v, getattr(node, 'resolved_name', v))
         if k == 'array':
             code = '[' + ', '.join(self.expr(child) for child in c) + ']'
             if self.format == 'ts':
@@ -139,9 +174,10 @@ class Emitter:
                 if item.kind == 'spread':
                     parts.append('...' + self.expr(item.children[0]))
                 else:
-                    key = json.dumps(decode_string(item.value) if item.value.startswith(('"', "'")) else item.value)
+                    key = decode_string(item.value) if item.value.startswith(('"', "'")) else item.value
                     # A computed key preserves __proto__ as an ordinary own property.
-                    parts.append(f'[{key}]: {self.expr(item.children[0])}')
+                    rendered=key if re.fullmatch(r'[A-Za-z_$][\w$]*',key) and key!='__proto__' else '['+json.dumps(key)+']'
+                    parts.append(f'{rendered}: {self.expr(item.children[0])}')
             obj = '{' + ', '.join(parts) + '}'
             return f'new {getattr(node, "constructor_name", v)}({obj})' if k == 'composite' else '(' + obj + ')'
         if k == 'member':
@@ -174,6 +210,7 @@ class Emitter:
                 child = f'({child} satisfies {"boolean" if v == "!" else "number"})'
             return f'({v}{" " if v == "await" else ""}{child})'
         if k == 'call':
+            if getattr(node,'builtin_call',None)=='len':return f'({self.expr(c[1])}).{node.length_property}'
             return f'({self.expr(c[0])})({", ".join(self.expr(arg) for arg in c[1:])})'
         if k == 'new':
             v = getattr(node, 'constructor_name', v)
@@ -203,6 +240,7 @@ class Emitter:
 
     def statement(self, node):
         code = self.statement_code(node)
+        if getattr(node,'leading_comments',None):code='\n'.join(node.leading_comments)+'\n'+code
         return f'/*__GS_LINE_{node.line}__*/\n' + code if self.checking and code else code
 
     def statement_code(self, node):

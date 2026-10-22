@@ -68,8 +68,12 @@ def decode_string(text):
     return ''.join(result).encode('utf-16-le', 'surrogatepass').decode('utf-16-le', 'surrogatepass')
 
 
+class Tokens(list):
+    def __init__(self):super().__init__();self.comments=[]
+
+
 def tokenize(source):
-    tokens, pos, line, line_start = [], 0, 1, 0
+    tokens, pos, line, line_start = Tokens(), 0, 1, 0
     delimiters = []
     can_end = False
     while pos < len(source):
@@ -77,6 +81,7 @@ def tokenize(source):
         if not match:
             raise CompileError(f'unexpected character {source[pos]!r}', line, pos - line_start + 1)
         text, kind = match.group(), match.lastgroup
+        if kind=='comment':tokens.comments.append((text,line,pos-line_start+1))
         if kind == 'string':
             try:
                 decode_string(text)
@@ -411,7 +416,9 @@ class Parser:
             kind = self.token.kind
             left = Node(kind, self.take(), line=line)
         elif self.token.kind == 'name':
+            token=self.token
             left = Node('name', self.take(), line=line)
+            left.name_span=(token.line,token.column,token.line,token.column+len(token.text))
         else:
             self.fail('expected expression')
         while True:
@@ -422,7 +429,9 @@ class Parser:
                     continue
             if self.accept('.'):
                 previous=left
-                left = Node('member', self.name(), [left], line)
+                token=self.token
+                left = Node('member', self.name(), [left], token.line)
+                left.name_span=(token.line,token.column,token.line,token.column+len(token.text))
                 left.optional_chain=not getattr(previous,'parenthesized',False) and (previous.kind.startswith('optional_') or getattr(previous,'optional_chain',False))
             elif self.accept('('):
                 previous=left
@@ -491,7 +500,39 @@ def parse_code(source):
     try:
         from .extended_parser import ExtendedParser
         parser = ExtendedParser(source)
+        # Capture source spans once for diagnostics, maps and editor operations.
+        for method_name in ('statement','expression','function','declaration'):
+            original=getattr(parser,method_name)
+            def located(*args,_original=original,**kwargs):
+                start=parser.i
+                node=_original(*args,**kwargs)
+                if isinstance(node,Node):
+                    first,last=parser.tokens[start],parser.tokens[max(start,parser.i-1)]
+                    node.span=(first.line,first.column,last.line,last.column+len(last.text))
+                return node
+            setattr(parser,method_name,located)
         program = Node('program', children=parser.program())
+        statements=[]
+        def collect(value):
+            if isinstance(value,Node):
+                if hasattr(value,'span') and value.kind not in ('name','number','string','binary','member','call','index','lambda','array','object','composite','new','unary','spread','property') and not value.kind.startswith('optional_'):statements.append(value)
+                for child in value.children:collect(child)
+            elif isinstance(value,list):
+                for child in value:collect(child)
+        collect(program)
+        statements.sort(key=lambda n:n.span[:2])
+        program.trailing_comments=[]
+        from bisect import bisect_left
+        statement_lines=[n.span[0] for n in statements]
+        for comment,line,column in parser.tokens.comments:
+            index=bisect_left(statement_lines,line)
+            if index<len(statements):
+                node=statements[index]
+                if not hasattr(node,'leading_comments'):node.leading_comments=[]
+                node.leading_comments.append(comment)
+            else:program.trailing_comments.append(comment)
+        program.tokens=tuple(parser.tokens)
+        program.source_text=source
         program.extended = parser.extended
         program.identifiers = frozenset(token.text for token in parser.tokens if token.kind == 'name')
         return program

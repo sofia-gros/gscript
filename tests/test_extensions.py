@@ -87,7 +87,7 @@ console.log(x.ID, x.get(), x.speed())
 ''','gs 2 3\n'),
 'aliases':('''type UserID = string
 type Position = {x: number, y: number}
-type Callback = func(number) number
+type Callback = func(int) int
 func apply(cb Callback, n int) int { return cb(n) }
 var p Position = {x: 2, y: 3}
 var id UserID = "gs"
@@ -158,7 +158,7 @@ class ExtensionTests(unittest.TestCase):
             root=Path(directory)
             (root/'parent.ts').write_text('export class Parent { readonly id: string; constructor(id: string) { this.id=id; } get(n: number): number { return n * 2; } }')
             entry=root/'main.gs'
-            source='import { Parent } from "./parent.ts"\n'+'type Child struct extends Parent {}\nfunc (c Child) constructor(id string) { super(id) }\noverride func (c Child) get(n int) int { return super.get(n) + 1 }\nconsole.log(new Child("gs").get(3))'
+            source='import { Parent } from "./parent.ts"\n'+'type Child struct extends Parent {}\nfunc (c Child) constructor(id string) { super(id) }\noverride func (c Child) get(n number) number { return super.get(n) + 1 }\nconsole.log(new Child("gs").get(3))'
             entry.write_text(source)
             for format in ('js','mjs','ts'):
                 output=build_project(entry,root/format,format=format,typescript=ROOT/'node_modules/typescript/lib/typescript.js')
@@ -166,7 +166,7 @@ class ExtensionTests(unittest.TestCase):
                 result=subprocess.run(['node',str(output)],capture_output=True,text=True,timeout=15)
                 self.assertEqual(result.returncode,0,result.stderr)
                 self.assertEqual(result.stdout,'7\n')
-            bad=[source.replace('super(id)','super(1)'), source.replace('get(n int) int','get(n string) int'), source.replace('console.log(new Child("gs").get(3))','new Child("gs").missing()')]
+            bad=[source.replace('super(id)','super(1)'), source.replace('get(n number) number','get(n string) number'), source.replace('console.log(new Child("gs").get(3))','new Child("gs").missing()')]
             for code in bad:
                 entry.write_text(code)
                 with patch('gscript.interop.ExternalChecker.run',side_effect=AssertionError('GS must reject this before output processing')):

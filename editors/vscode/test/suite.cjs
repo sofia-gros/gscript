@@ -19,7 +19,7 @@ exports.run = async function () {
   await vscode.workspace.applyEdit(edit);
   await waitFor(()=>vscode.languages.getDiagnostics(uri).length===0);
   const hovers = await vscode.commands.executeCommand('vscode.executeHoverProvider', uri, new vscode.Position(1,13));
-  assert(hovers.some(h=>h.contents.some(c=>(c.value || '').replace(/&nbsp;/g, ' ').includes('value: number'))), JSON.stringify(hovers));
+  assert(hovers.some(h=>h.contents.some(c=>(c.value || '').replace(/&nbsp;/g, ' ').includes('value: int'))), JSON.stringify(hovers));
   const completions = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider',uri,new vscode.Position(1,0));
   assert(completions.items.some(i=>i.label==='value'));
   console.log('VSCode real extension host: diagnostics, unsaved edits, hover and completion passed');

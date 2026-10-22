@@ -31,7 +31,7 @@ def main():
         assert responses[0]['result']['serverInfo']['version']=='0.4.0',responses
         assert 'type mismatch' in responses[1]['params']['diagnostics'][0]['message'],responses
         assert responses[2]['params']['diagnostics']==[],responses
-        assert responses[3]['result']['contents']['value']=='value: number',responses
+        assert responses[3]['result']['contents']['value']=='value: int',responses
         print('Distributed GS LSP: framed stdio, native diagnostics, unsaved edits and hover passed')
 
 

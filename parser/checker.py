@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import re
 
 from .syntax import CompileError, decode_string
+from .builtins import REGISTRY, check_call
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,15 @@ def is_external(typ):
 def is_dynamic(typ):
     return typ == ANY or is_external(typ)
 NUMBER = Type('number')
+INT = Type('int')
+FLOAT = Type('float')
+NUMERIC = Type('numeric')
+
+def numeric(typ):
+    return typ.kind in ('int','float','number') or typ.kind=='literal' and numeric(typ.args[0])
+
+def numeric_literal(text):
+    return FLOAT if any(c in text for c in '.eE') else INT
 STRING = Type('string')
 BOOL = Type('bool')
 VOID = Type('void')
@@ -148,7 +158,7 @@ class Checker:
         # GS resolves an initializer before binding the new name. Give shadowed
         # lexical bindings a distinct JS name so those semantics remain intact.
         emitted = name
-        shadowed = any(name in scope for scope in self.scopes[:-1]) or name in GLOBALS or name == 'printf'
+        shadowed = (node.kind not in ('func','lambda') and any(name in scope for scope in self.scopes[:-1])) or name in GLOBALS or name in REGISTRY
         if category == 'variable' and shadowed:
             while True:
                 emitted = f'__gs_local{self.name_counter}'
@@ -168,7 +178,9 @@ class Checker:
         for scope in reversed(self.scopes):
             if name in scope:
                 return scope[name]
-        if name in GLOBALS or name == 'printf':
+        if name in REGISTRY:
+            return Symbol(Type('builtin',name),True,'builtin')
+        if name in GLOBALS:
             return Symbol(ANY, True, 'global')
         self.fail(node, f'undefined name: {name}')
 
@@ -207,7 +219,7 @@ class Checker:
         if name.startswith('Promise<') and name.endswith('>'):
             return promise(self.declared_type(node, name[8:-1]))
         if name in ('int', 'float', 'float64', 'number'):
-            return NUMBER
+            return {'int':INT,'float':FLOAT,'float64':FLOAT,'number':NUMBER}[name]
         if name in ('bool', 'boolean'):
             return BOOL
         primitive = {'string': STRING, 'any': ANY, 'object': OBJECT, 'void': VOID, 'Promise': promise(ANY)}
@@ -224,8 +236,11 @@ class Checker:
         self.fail(node, f'unknown type: {name}')
 
     def compatible(self, expected, actual):
+        if expected in (NUMERIC,NUMBER) and numeric(actual):return True
         if is_dynamic(expected) or is_dynamic(actual) or expected == actual:
             return True
+        if actual.kind=='union':return all(self.compatible(expected,t) for t in actual.args)
+        if expected.kind=='union':return any(self.compatible(t,actual) for t in expected.args)
         if actual == NULL:
             return expected.kind in ('object', 'record', 'array', 'struct', 'function', 'promise')
         if expected == OBJECT:
@@ -432,22 +447,21 @@ class Checker:
         if base.kind == 'array':
             element = base.args[0]
             if key == 'length':
-                return NUMBER
+                return INT
             if key in ('map', 'filter', 'find', 'forEach', 'some', 'every'):
                 return Type('array_method', key, (element,))
             if key in ('push', 'unshift'):
                 return Type('array_method', key, (element,))
-            if key in ('pop', 'shift'):
-                # JS may return undefined, deliberately represented as any.
-                return function([], ANY)
+            if key in ('pop','shift'):
+                return function([],Type('union',args=(element,Type('undefined'))))
             if key == 'join':
                 return function([STRING], STRING)
-            if key in ('slice', 'concat', 'includes', 'indexOf', 'entries', 'keys', 'values', 'reverse', 'sort'):
-                return ANY
+            if key in ('slice','concat','includes','indexOf','entries','keys','values','reverse','sort'):
+                return Type('array_method',key,(element,))
             self.fail(n, f'unknown array property: {key}')
         if base == STRING:
             if key == 'length':
-                return NUMBER
+                return INT
             if key in ('toUpperCase', 'toLowerCase', 'trim', 'trimStart', 'trimEnd'):
                 return function([], STRING)
             if key in ('slice', 'substring', 'split', 'replace', 'includes', 'startsWith', 'endsWith', 'charAt', 'indexOf', 'repeat', 'padStart', 'padEnd', 'match', 'replaceAll'):
@@ -455,14 +469,14 @@ class Checker:
             self.fail(n, f'unknown string property: {key}')
         if base.kind == 'promise' and key in ('then', 'catch', 'finally'):
             return ANY
-        if base == NUMBER and key in ('toFixed', 'toString', 'toPrecision'):
+        if numeric(base) and key in ('toFixed', 'toString', 'toPrecision'):
             return ANY
         self.fail(n, f'{base} has no property {key}')
 
     def expression(self, n):
         k, v, c = n.kind, n.value, n.children
         if k == 'number':
-            return NUMBER
+            return numeric_literal(v)
         if k == 'string':
             return STRING
         if k == 'name':
@@ -474,7 +488,7 @@ class Checker:
             if not symbol.initialized:
                 self.fail(n, f'module value used before initialization: {v}')
             n.resolved_name = symbol.js_name or v
-            n.builtin = v == 'printf' and symbol.category == 'global'
+            n.builtin = v if symbol.category=='builtin' else None
             return symbol.typ
         if k == 'array':
             element = self.declared_type(n, v)
@@ -537,7 +551,7 @@ class Checker:
         if k == 'index':
             base, index = self.expr(c[0]), self.expr(c[1])
             if base.kind == 'array' or base == STRING:
-                self.check(n, NUMBER, index)
+                self.check(n, INT, index)
                 return base.args[0] if base.kind == 'array' else STRING
             if is_external(base):
                 return EXTERNAL
@@ -559,25 +573,26 @@ class Checker:
                     self.fail(n, f'cannot compare {lt} and {rt}')
                 return BOOL
             if v in ('<', '>', '<=', '>='):
-                if (not is_dynamic(lt) and lt not in (NUMBER, STRING)) or (not is_dynamic(rt) and rt not in (NUMBER, STRING)):
+                if (not is_dynamic(lt) and not numeric(lt) and lt != STRING) or (not is_dynamic(rt) and not numeric(rt) and rt != STRING):
                     self.fail(n, f'operator {v} requires numbers or strings')
                 self.check(n, lt, rt)
                 return BOOL
             if v == '+' and lt == rt == STRING:
                 return STRING
-            if v == '+' and (is_external(lt) or is_external(rt)) and (is_dynamic(lt) or lt in (STRING, NUMBER)) and (is_dynamic(rt) or rt in (STRING, NUMBER)):
+            if v == '+' and (is_external(lt) or is_external(rt)) and (is_dynamic(lt) or (lt == STRING or numeric(lt))) and (is_dynamic(rt) or (rt == STRING or numeric(rt))):
                 return EXTERNAL
-            if (not is_dynamic(lt) and lt != NUMBER) or (not is_dynamic(rt) and rt != NUMBER):
+            if (not is_dynamic(lt) and not numeric(lt)) or (not is_dynamic(rt) and not numeric(rt)):
                 self.fail(n, f'operator {v} requires matching numeric operands (or strings for +)')
-            return EXTERNAL if is_external(lt) or is_external(rt) else ANY if ANY in (lt, rt) else NUMBER
+            if not is_dynamic(lt) and not is_dynamic(rt):self.check(n,lt,rt)
+            return EXTERNAL if is_external(lt) or is_external(rt) else ANY if ANY in (lt, rt) else FLOAT if v=='/' and lt==INT else lt
         if k == 'unary':
             typ = self.expr(c[0])
             if v == 'await':
                 if not self.async_context:
                     self.fail(n, 'await requires an async function')
                 return typ.args[0] if typ.kind == 'promise' else typ
-            self.check(n, BOOL if v == '!' else NUMBER, typ)
-            return BOOL if v == '!' else NUMBER
+            self.check(n, BOOL if v == '!' else NUMERIC, typ)
+            return BOOL if v == '!' else typ
         if k == 'lambda':
             if self.defer_functions:
                 self.deferred_functions.append((n, list(self.scopes)))
@@ -613,6 +628,7 @@ class Checker:
             for arg, typ in zip(c[1:], args):
                 if arg.kind == 'spread' and not is_dynamic(typ) and typ != STRING and typ.kind != 'array':
                     self.fail(arg, 'spread argument must be iterable')
+            if callee.kind=='builtin':return check_call(self,n,callee.name,args)
             if is_dynamic(callee):
                 return EXTERNAL if is_external(callee) else ANY
             if callee.kind == 'array_method':
@@ -634,7 +650,31 @@ class Checker:
         if method.name in ('push', 'unshift'):
             for arg, actual in zip(node.children[1:], args):
                 self.check(arg, element, actual.args[0] if arg.kind == 'spread' and actual.kind == 'array' else actual)
-            return NUMBER
+            return INT
+        if method.name in ('slice','includes','indexOf','concat','reverse','sort','entries','keys','values'):
+            name=method.name
+            if name=='slice':
+                if len(args)>2:self.fail(node,'slice accepts at most two indices')
+                for arg in args:self.check(node,INT,arg)
+            elif name in ('includes','indexOf'):
+                if not 1<=len(args)<=2:self.fail(node,name+' expects an element and optional starting index')
+                self.check(node,element,args[0])
+                if len(args)==2:self.check(node,INT,args[1])
+                return BOOL if name=='includes' else INT
+            elif name=='concat':
+                for actual in args:self.check(node,array(element) if actual.kind=='array' else element,actual)
+            elif name=='sort':
+                if len(args)>1:self.fail(node,'sort accepts at most one comparator')
+                if args and not is_dynamic(args[0]):
+                    signature=args[0]
+                    if signature.kind!='function' or len(signature.args)!=3:self.fail(node,'sort comparator requires two arguments')
+                    for param in signature.args[:-1]:self.check(node,param,element)
+                    self.check(node,NUMERIC,signature.args[-1])
+            elif args:self.fail(node,name+' does not accept arguments')
+            if name in ('entries','keys','values'):
+                value=INT if name=='keys' else element if name=='values' else Type('tuple',args=(INT,element))
+                return Type('iterator',args=(value,))
+            return array(element)
         if len(args) != 1:
             self.fail(node, 'array callback method requires one callback')
         callback = args[0]
@@ -646,7 +686,7 @@ class Checker:
         params, result = callback.args[:-1], callback.args[-1]
         if len(params) > 3:
             self.fail(node, 'array callback accepts at most value, index and array')
-        for param, supplied in zip(params, (element, NUMBER, array(element))):
+        for param, supplied in zip(params, (element, INT, array(element))):
             self.check(node, param, supplied)
         if method.name == 'map':
             if result == VOID:
@@ -699,10 +739,10 @@ class Checker:
             else:
                 expected = self.assignable(c[0])
                 self.check(n, expected, actual)
-                if v in ('+=', '-=') and not is_dynamic(expected) and expected != NUMBER and not (v == '+=' and expected == STRING):
+                if v in ('+=', '-=') and not is_dynamic(expected) and not numeric(expected) and not (v == '+=' and expected == STRING):
                     self.fail(n, f'operator {v} cannot be used with {expected}')
         elif k == 'update':
-            self.check(n, NUMBER, self.assignable(c[0]))
+            self.check(n, NUMERIC, self.assignable(c[0]))
         elif k == 'expr':
             self.expr(c[0])
         elif k == 'return':
@@ -730,7 +770,7 @@ class Checker:
                         collection = self.expr(c[0])
                         if not is_dynamic(collection) and collection.kind != 'array':
                             self.fail(n, 'range currently supports arrays only')
-                        self.bind(n, v[0], NUMBER)
+                        self.bind(n, v[0], INT)
                         if len(v) == 2:
                             self.bind(n, v[1], collection.args[0] if collection.kind == 'array' else collection)
                         body = c[1]

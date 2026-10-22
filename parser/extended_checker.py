@@ -3,7 +3,7 @@ from contextlib import contextmanager, ExitStack
 import json
 import math
 import re
-from .checker import (Checker, Type, Struct, Symbol, ANY, NUMBER, STRING, BOOL, VOID, NULL,
+from .checker import (Checker, Type, Struct, Symbol, ANY, NUMBER, INT, FLOAT, NUMERIC, numeric, numeric_literal, STRING, BOOL, VOID, NULL,
                       OBJECT, EXTERNAL, function, array, promise, unwrap, import_names, is_external)
 from .syntax import decode_string, CompileError, Node
 
@@ -93,7 +93,7 @@ class ExtendedChecker(Checker):
         if name == 'unknown': return UNKNOWN
         if name in ('true', 'false'): return Type('literal', name, (BOOL,))
         if name.startswith(('"', "'")): return Type('literal', json.dumps(decode_string(name),ensure_ascii=False), (STRING,))
-        if re.fullmatch(r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?', name): return Type('literal', str(int(float(name))) if math.isfinite(float(name)) and float(name).is_integer() else str(float(name)), (NUMBER,))
+        if re.fullmatch(r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?', name): return Type('literal', str(int(float(name))) if math.isfinite(float(name)) and float(name).is_integer() else str(float(name)), (numeric_literal(name),))
         if name.startswith('func('):
             depth,end,quote=1,5,None
             while end<len(name) and depth:
@@ -255,7 +255,7 @@ class ExtendedChecker(Checker):
                         current = 'string' if isinstance(value,str) else 'number'
                         if flavor and flavor != current: self.fail(n, 'enum cannot mix strings and numbers')
                         flavor = current
-                        typ = Type('literal', json.dumps(value,ensure_ascii=False), (STRING if current == 'string' else NUMBER,))
+                        typ = Type('literal', json.dumps(value,ensure_ascii=False), (STRING if current == 'string' else INT,))
                         target.statics[name] = typ
                         n.enum_values.append((name,value))
                         if current == 'number': value += 1
@@ -666,7 +666,7 @@ class ExtendedChecker(Checker):
     def expression(self,n):
         k,v,c = n.kind,n.value,n.children
         if k in ('string','number'):
-            return Type('literal',json.dumps(decode_string(v),ensure_ascii=False) if k == 'string' else (str(int(float(v))) if math.isfinite(float(v)) and float(v).is_integer() else str(float(v))),(STRING if k == 'string' else NUMBER,))
+            return Type('literal',json.dumps(decode_string(v),ensure_ascii=False) if k == 'string' else (str(int(float(v))) if math.isfinite(float(v)) and float(v).is_integer() else str(float(v))),(STRING if k == 'string' else numeric_literal(v),))
         if k == 'name':
             if v in ('true','false'): return Type('literal',v,(BOOL,))
             if v == 'undefined': return UNDEFINED
@@ -683,8 +683,8 @@ class ExtendedChecker(Checker):
             if k == 'optional_member': result = self.property(n,remaining,v)
             elif k == 'optional_index':
                 index = self.expr(c[1])
-                if remaining.kind == 'array': self.check(n,NUMBER,index); result = remaining.args[0]
-                elif remaining == STRING: self.check(n,NUMBER,index); result = STRING
+                if remaining.kind == 'array': self.check(n,INT,index); result = remaining.args[0]
+                elif remaining == STRING: self.check(n,INT,index); result = STRING
                 elif remaining == ANY: result = ANY
                 else: self.fail(n,'optional index requires an array or string')
             else: result = self.call_signature(n,remaining,[self.expr(a) for a in c[1:]]) if remaining != ANY else ANY
@@ -695,7 +695,7 @@ class ExtendedChecker(Checker):
             base=c[0].chain_value_type
             if k=='member':result=self.property(n,base,v)
             elif k=='index':
-                self.check(n,NUMBER,self.expr(c[1]))
+                self.check(n,INT,self.expr(c[1]))
                 if base.kind!='array' and base!=STRING:self.fail(n,'cannot index optional chain value')
                 result=base.args[0] if base.kind=='array' else STRING
             else:result=self.call_signature(n,base,[self.expr(a) for a in c[1:]])
@@ -715,7 +715,7 @@ class ExtendedChecker(Checker):
             return substitute(callee.args[0],mapping)
         if k=='unary' and v in ('+','-') and c[0].kind=='number':
             value=float(c[0].value)*(1 if v=='+' else -1)
-            return Type('literal',str(int(value)) if math.isfinite(value) and value.is_integer() else str(value),(NUMBER,))
+            return Type('literal',str(int(value)) if math.isfinite(value) and value.is_integer() else str(value),(numeric_literal(c[0].value),))
         if k == 'unary' and v == 'typeof': self.expr(c[0]); return STRING
         if k == 'binary' and v == '??':
             left,right = self.expr(c[0]),self.expr(c[1])
@@ -798,7 +798,7 @@ class ExtendedChecker(Checker):
                 return typ
         if k=='index':
             base=self.expand(self.expr(c[0]))
-            if base.kind=='array':self.check(n,NUMBER,self.expr(c[1]));return base.args[0]
+            if base.kind=='array':self.check(n,INT,self.expr(c[1]));return base.args[0]
         if k=='binary' and v in ('&&','||'):
             left=self.expr(c[0])
             with self.narrowing(c[0],v=='&&'):right=self.expr(c[1])
@@ -815,10 +815,10 @@ class ExtendedChecker(Checker):
                 if not self.compatible(left,right) and not self.compatible(right,left): self.fail(n,'incompatible comparison')
                 return BOOL
             if v in ('<','>','<=','>='):
-                if left not in (NUMBER,STRING,ANY) or right not in (NUMBER,STRING,ANY): self.fail(n,'comparison requires matching numbers or strings')
+                if not (numeric(left) or left in (STRING,ANY)) or not (numeric(right) or right in (STRING,ANY)): self.fail(n,'comparison requires matching numbers or strings')
                 self.check(n,left,right); return BOOL
             if v == '+' and left == right == STRING: return STRING
-            self.check(n,NUMBER,left); self.check(n,NUMBER,right); return NUMBER
+            self.check(n,NUMERIC,left); self.check(n,NUMERIC,right); self.check(n,left,right); return FLOAT if v=='/' and left==INT else left
         return super().expression(n)
 
     def foreign_constructor(self,typ):
@@ -1016,7 +1016,7 @@ class ExtendedChecker(Checker):
 
     def zero_type(self,typ):
         primitive=widen(typ)
-        if primitive==NUMBER:return Type('literal','0',(NUMBER,))
+        if numeric(primitive):return Type('literal','0',(primitive,))
         if primitive==BOOL:return Type('literal','false',(BOOL,))
         if primitive==STRING:return Type('literal','""',(STRING,))
         if typ.kind=='union':

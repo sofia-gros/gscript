@@ -50,7 +50,7 @@ class LanguageServerTests(unittest.TestCase):
     def test_hover_completion_symbols_and_shadowing(self):
         self.open('var value int = 3\nconsole.log(value)\nfunc other() { var value string = "local"; console.log(value) }')
         hover=self.server.handle('textDocument/hover',{'textDocument':{'uri':self.uri},'position':{'line':1,'character':13}})
-        self.assertEqual(hover['contents']['value'],'value: number')
+        self.assertEqual(hover['contents']['value'],'value: int')
         hover=self.server.handle('textDocument/hover',{'textDocument':{'uri':self.uri},'position':{'line':2,'character':56}})
         self.assertEqual(hover['contents']['value'],'value: string')
         items=self.server.handle('textDocument/completion',{'textDocument':{'uri':self.uri},'position':{'line':1,'character':0}})['items']

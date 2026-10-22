@@ -1,0 +1,8 @@
+{
+  "modules": 1000,
+  "runs": 3,
+  "gs_only_median_seconds": 0.16058986300049582,
+  "external_cold_seconds": 3.023254960004124,
+  "external_warm_median_seconds": 0.06785534999653464,
+  "external_cache_speedup": 44.554408166172905
+}

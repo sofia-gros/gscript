@@ -205,7 +205,7 @@ console.log(twice(box.value), box.scale(2), identity("typed"))
             root = Path(directory)
             self.package(root)
             entry = root / 'main.gs'
-            entry.write_text('import { twice } from "@fixture/math"\nvalues := []int{}\nvalues.push(twice(2))\nconsole.log(values[0])')
+            entry.write_text('import { twice } from "@fixture/math"\nvalues := []int{}\nvalues.push(int(twice(2)))\nconsole.log(values[0])')
             for format in ('js', 'mjs', 'ts'):
                 with self.subTest(format=format):
                     output = self.build(entry, root / format, format)

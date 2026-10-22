@@ -44,7 +44,7 @@ class ExtendedEmitter(Emitter):
 
     def default(self,typ):
         if isinstance(typ,Type):
-            if typ.kind=='number':return '0'
+            if typ.kind in ('int','float','number'):return '0'
             if typ.kind=='bool':return 'false'
             if typ.kind=='string':return '\"\"'
             return 'null'+('!' if self.format=='ts' else '')
@@ -73,7 +73,8 @@ class ExtendedEmitter(Emitter):
         before=[n for n in nodes if unwrap(n).kind in ('import','interface','alias','enum')]
         functions=[n for n in nodes if unwrap(n).kind=='func']
         rest=[n for n in nodes if unwrap(n).kind not in ('import','interface','alias','enum','struct','func') or unwrap(n).kind=='struct' and getattr(unwrap(n),'deferred_class',False)]
-        return '\n\n'.join(filter(None,(self.statement(n) for n in before+ordered+functions+rest)))+'\n'
+        code='\n\n'.join(filter(None,(self.statement(n) for n in before+ordered+functions+rest)))+'\n'
+        return code+'\n'.join(getattr(program,'trailing_comments',[]))+('\n' if getattr(program,'trailing_comments',[]) else '')
 
     def generic(self,node):
         if self.format!='ts' or not getattr(node,'type_params',[]):return ''
@@ -156,6 +157,7 @@ class ExtendedEmitter(Emitter):
     def statement_code(self,node):
         k,v,c=node.kind,node.value,node.children
         if k=='export':
+            if self.format!='ts' and c[0].kind in ('alias','interface'):return '\n'.join(getattr(c[0],'leading_comments',[]))
             code=self.statement(c[0])
             if not code:return ''
             return 'export '+code.replace('\ntype ','\nexport type ') if c[0].kind=='enum' else 'export '+code

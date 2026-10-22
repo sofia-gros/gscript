@@ -23,7 +23,7 @@ class CompilerTests(unittest.TestCase):
     def test_functions_precedence_and_legacy_api(self):
         source = '''func add(a int, b int) int { return a + b }
 var n int = 2 + 3 * 4
-printf(add(n, 1), 10 - 6 / 2, 9 % 4)
+println(add(n, 1), 10.0 - 6.0 / 2.0, 9 % 4)
 console.log((2 + 3) * 4, -2 * 3, 2 <= 3 && 3 != 4)'''
         js = self.run_js(source, '15 7 1\n20 -6 true\n')
         self.assertEqual(MyLangTransformer().transform(parse_code(source)), js)
@@ -57,7 +57,7 @@ if i == 3 { break }
 console.log(i)
 }
 var j int = 0
-for (let k number = 0; k < 2; k = k + 1) { j += k }
+for (let k int = 0; k < 2; k = k + 1) { j += k }
 for (j < 3) { j++ }
 for { break }
 for i := range []string{"x", "y"} { console.log(i) }
