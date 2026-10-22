@@ -114,7 +114,7 @@ class Index:
             span=getattr(symbol,'definition_span',None)
             if span:
                 occupied.add(span)
-                self.add(Occurrence(key,uri,span,symbol.original_name,True,symbol))
+                self.add(Occurrence(key,uri,span,symbol.original_name,not getattr(symbol,'target',None) or key!=symbol_key(symbol,False),symbol))
         for key,target in checker.structs.items():
             if getattr(target,'checker',None) is not checker:continue
             for field,span in getattr(target.node,'field_spans',{}).items():

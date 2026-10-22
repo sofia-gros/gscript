@@ -98,3 +98,14 @@ class EnhancedLSPTests(unittest.TestCase):
         self.changed(uri,'type Item struct { Value int }\nfunc (x Item) constructor(n int) { x.Value=n }\nx := new Item(3)\nprintln(x.Value)')
         signature=self.request('signatureHelp',uri,2,15)
         self.assertIn('n: int',signature['signatures'][0]['label'])
+
+    def test_unaliased_import_definition_and_references(self):
+        library=self.open('lib.gs','export func helper() int { return 1 }')
+        main=self.open('main.gs','import { helper } from "./lib.gs"\nprintln(helper())')
+        definitions=self.request('definition',main,1,10)
+        self.assertEqual(len(definitions),1)
+        self.assertEqual(definitions[0]['uri'],library)
+        references=self.request('references',library,0,14,context={'includeDeclaration':False})
+        self.assertEqual(len(references),2)
+        self.apply(self.request('rename',library,0,14,newName='renamed'))
+        self.assertIn('import { renamed }',self.server.documents[main]['text'])
