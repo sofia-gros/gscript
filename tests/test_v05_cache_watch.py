@@ -73,3 +73,16 @@ class IncrementalTests(unittest.TestCase):
             process.send_signal(signal.SIGINT);process.wait(timeout=10)
             self.assertEqual(process.returncode,0)
             process.stdout.close();process.stderr.close()
+
+    def test_external_project_reuses_unchanged_gs_emissions(self):
+        with tempfile.TemporaryDirectory(prefix='.gs-incremental-',dir=ROOT) as d:
+            root=Path(d);entry=root/'main.gs';library=root/'lib.gs'
+            (root/'foreign.ts').write_text('export const external:number=2')
+            library.write_text('export func f(n int) int { return n+1 }')
+            entry.write_text('import { external } from "./foreign.ts"\nimport { f } from "./lib.gs"\nprintln(external,f(1))')
+            session=BuildSession();settings=configure(entry)
+            build(settings,session=session);before=session.emitted
+            library.write_text('export func f(n int) int { return n+2 }')
+            build(settings,session=session)
+            self.assertEqual(session.emitted,before+1)
+            self.assertEqual(subprocess.check_output(['node',str(root/'dist/main.js')],text=True),'2 3\n')

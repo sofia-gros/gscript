@@ -101,12 +101,9 @@ class BuildSession(CheckSession):
         super().__init__();self.emissions={};self.emitted=0;self.emission_hits=0
 
     def plan(self,project,out_dir,format):
-        # External emission already uses its content-validated persistent cache.
         from .project import plan_outputs
-        if project.has_external:return plan_outputs(project,out_dir,format)
         shapes={path:digest(repr(tuple((name,type_shape(symbol.typ,module.checker.structs)) for name,symbol in sorted(module.exports.items())))) for path,module in project.modules.items()}
-        outputs={};out_dir=Path(out_dir).resolve()
-        for module in project.modules.values():
+        def emit(module,format):
             dependencies=set();queue=list(module.imports.values())
             while queue:
                 path=queue.pop()
@@ -117,9 +114,6 @@ class BuildSession(CheckSession):
             else:
                 code=project.emit(module,format);self.emissions[key]=code;self.emitted+=1
                 if len(self.emissions)>4096:self.emissions.pop(next(iter(self.emissions)))
-            outputs[out_dir/module.source.relative_to(project.root).with_suffix('.'+format)]=code
-        if format in ('js','ts'):
-            from .project import module_marker
-            marker=module_marker(out_dir)
-            if marker:outputs[marker]='{"type":"module"}\n'
-        return outputs
+            return code
+        # Keep the same collision/source protections for cached and cold builds.
+        return plan_outputs(project,out_dir,format,emitter=emit)

@@ -310,7 +310,7 @@ def build_project(entry, out_dir, root=None, format='mjs', check_only=False, cac
     return Path(out_dir).resolve() / project.entry.relative_to(project.root).with_suffix('.' + format)
 
 
-def plan_outputs(project, out_dir, format='mjs'):
+def plan_outputs(project, out_dir, format='mjs', emitter=None):
     """Plan every file and validate collisions before committing any build output."""
     out_dir = Path(out_dir).resolve()
     outputs = {}
@@ -320,7 +320,7 @@ def plan_outputs(project, out_dir, format='mjs'):
             raise CompileError('build output must not overwrite a source file')
         if output in outputs:
             raise CompileError(f'output path collision: {output}')
-        outputs[output] = project.emit(module, format)
+        outputs[output] = (emitter or project.emit)(module, format)
     if project.has_external:
         external = project._external_result(format)
         protected = {Path(item['file']).resolve() for item in external.get('dependencies', []) if item.get('readHash')}

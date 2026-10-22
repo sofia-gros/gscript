@@ -43,7 +43,7 @@ class NumericAndBuiltinTests(unittest.TestCase):
             with self.subTest(source=source),self.assertRaises(CompileError):compile_source(source)
 
     def test_number_boundary_does_not_narrow_implicitly(self):
-        compile_source('var n number = 1\nvar f number = 1.5')
+        compile_source('var n number = 1\nvar f number = 1.5\nvar a number = 1+n\nvar b number = n+1\nprintln(1<n,n>1)')
         for source in ('var n number = 1\nvar i int = n','var n number = 1.0\nvar f float = n'):
             with self.assertRaises(CompileError):compile_source(source)
 

@@ -47,11 +47,11 @@ def build_native(output):
         staging.mkdir()
         shutil.copy2(executable, staging / executable.name)
         shutil.copy2(ROOT / 'readme.md', staging / 'README.md')
-        shutil.copy2(ROOT / 'docs/language.md', staging / 'LANGUAGE.md')
+        shutil.copytree(ROOT / 'docs', staging / 'docs')
         if system == 'windows':
             with zipfile.ZipFile(output / (base + '.zip'), 'w', zipfile.ZIP_DEFLATED) as archive:
-                for path in staging.iterdir():
-                    archive.write(path, str(Path(base) / path.name))
+                for path in staging.rglob('*'):
+                    if path.is_file():archive.write(path, str(Path(base) / path.relative_to(staging)))
         else:
             with tarfile.open(output / (base + '.tar.gz'), 'w:gz') as archive:
                 archive.add(staging, arcname=base)

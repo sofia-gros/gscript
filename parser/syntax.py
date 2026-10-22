@@ -69,7 +69,7 @@ def decode_string(text):
 
 
 class Tokens(list):
-    def __init__(self):super().__init__();self.comments=[]
+    def __init__(self):super().__init__();self.comments=[];self.identifiers=set()
 
 
 def tokenize(source):
@@ -92,6 +92,7 @@ def tokenize(source):
                 tokens.append(Token(';', line, 'separator', pos - line_start + 1))
                 can_end = False
         elif kind not in ('space', 'comment'):
+            if kind=='name':tokens.identifiers.add(text)
             tokens.append(Token(text, line, kind, pos - line_start + 1))
             if text in ('(', '[', '{'):
                 delimiters.append(text)
@@ -580,7 +581,7 @@ def parse_code(source, positions=False):
             program.source_text=source
         program.position_info=positions
         program.extended = parser.extended
-        program.identifiers = frozenset(token.text for token in parser.tokens if token.kind == 'name')
+        program.identifiers = frozenset(parser.tokens.identifiers)
         return program
     except RecursionError as error:
         raise CompileError('source nesting exceeds compiler capacity') from error

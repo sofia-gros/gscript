@@ -39,7 +39,10 @@ def check_call(checker, node, name, args):
         if typ.kind=='literal':typ=typ.args[0]
         if typ.kind=='array' or typ==STRING:node.length_property='length'
         elif typ.kind=='foreign':
-            try:checker.property(node,typ,'size');node.length_property='size'
+            try:
+                size=checker.property(node,typ,'size')
+                if not numeric(size):checker.fail(node,'len requires a numeric size property')
+                node.length_property='size'
             except ValueError:checker.fail(node,'len requires an array, string, Map or Set')
         else:checker.fail(node,'len requires an array, string, Map or Set')
     return {'int':INT,'float':FLOAT,'number':NUMBER,'string':STRING,'void':VOID}[spec.result]

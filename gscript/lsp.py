@@ -13,7 +13,7 @@ from parser.compiler import CompileError, parse_code
 from parser.checker import unwrap
 from parser.syntax import tokenize
 
-KEYWORDS = 'func type struct interface enum extends implements constructor super override static public private protected readonly var const return if else for range switch case default break continue async await new export import true false nil undefined int float number string bool any void'.split()
+KEYWORDS = 'func type struct interface enum extends implements constructor super override static public private protected readonly var const return if else for range switch case default break continue async await new export import true false nil undefined int float float64 number string bool any unknown never void try catch throw typeof instanceof'.split()
 
 
 def path_from_uri(uri):

@@ -5,59 +5,59 @@
   "cases": [
     {
       "modules": 1,
-      "cold_seconds": 0.004088647999992645,
-      "warm_median_seconds": 0.0005174079999505921,
-      "incremental_seconds": 0.0013689080000176546,
+      "cold_seconds": 0.0044864090000373835,
+      "warm_median_seconds": 0.0005439890001071035,
+      "incremental_seconds": 0.001333903999920949,
       "incremental_parsed": 1,
       "incremental_emitted": 1,
-      "python_peak_bytes": 32176,
+      "python_peak_bytes": 32244,
       "output_bytes": 111,
       "external_phaser": false
     },
     {
       "modules": 100,
-      "cold_seconds": 0.041987491999975646,
-      "warm_median_seconds": 0.009791396999958124,
-      "incremental_seconds": 0.024273340999911852,
+      "cold_seconds": 0.057904299000028914,
+      "warm_median_seconds": 0.012521724999942307,
+      "incremental_seconds": 0.028124552000008407,
       "incremental_parsed": 1,
       "incremental_emitted": 1,
-      "python_peak_bytes": 1359348,
+      "python_peak_bytes": 1363544,
       "output_bytes": 7608,
       "external_phaser": false
     },
     {
       "modules": 1000,
-      "cold_seconds": 0.4412417479999249,
-      "warm_median_seconds": 0.09175326600006883,
-      "incremental_seconds": 0.2478936350000822,
+      "cold_seconds": 0.6297157569999854,
+      "warm_median_seconds": 0.1223255859999881,
+      "incremental_seconds": 0.2925997299998926,
       "incremental_parsed": 1,
       "incremental_emitted": 1,
-      "python_peak_bytes": 13488547,
+      "python_peak_bytes": 13520174,
       "output_bytes": 78708,
       "external_phaser": false
     },
     {
       "modules": 1,
-      "cold_seconds": 3.4613907179999615,
-      "warm_median_seconds": 0.04402721200005999,
-      "incremental_seconds": 1.475244427000007,
+      "cold_seconds": 3.4638336109999273,
+      "warm_median_seconds": 0.052147461000004114,
+      "incremental_seconds": 1.7808670539998275,
       "incremental_parsed": 1,
-      "incremental_emitted": 0,
-      "python_peak_bytes": 9593144,
+      "incremental_emitted": 1,
+      "python_peak_bytes": 9594231,
       "output_bytes": 179,
       "external_phaser": true
     },
     {
       "modules": 100,
-      "cold_seconds": 3.7738152309999577,
-      "warm_median_seconds": 0.05616385099995114,
-      "incremental_seconds": 3.0172328439999774,
+      "cold_seconds": 4.1627525570002035,
+      "warm_median_seconds": 0.06997111400005451,
+      "incremental_seconds": 2.346909620999895,
       "incremental_parsed": 1,
-      "incremental_emitted": 0,
-      "python_peak_bytes": 11927876,
+      "incremental_emitted": 1,
+      "python_peak_bytes": 12046652,
       "output_bytes": 11258,
       "external_phaser": true
     }
   ],
-  "gs_1000_check_median_seconds": 0.23203226900000118
+  "gs_1000_check_median_seconds": 0.1868702790000043
 }
