@@ -17,6 +17,7 @@ from .interop import find_typescript, _fingerprint, _digest
 class Declarations:
     def __init__(self, project):
         self.project,self.cache,self.type_cache=project,{},{}
+        self.dependencies=[]
         self.process=None
         self.closed=False
         sources=[]
@@ -28,8 +29,9 @@ class Declarations:
                 imports.append('import '+(binding+' from ' if binding else '')+literal+';')
             sources.append({'fileName':str(module.source)+'.declarations.mts','text':'\n'.join(imports)})
         self.script=files('gscript').joinpath('declarations.cjs').read_text(encoding='utf-8')
-        self.init_request={'action':'init','typescript':str(find_typescript(project.entry,project.interop_options['typescript'])),'sources':sources}
-        identity=json.dumps(self.init_request,sort_keys=True)+self.script+_digest(Path(self.init_request['typescript']))
+        self.init_request={'action':'init','typescript':str(find_typescript(project.entry,project.interop_options['typescript'])),'sources':sources,'libraries':project.libraries}
+        self.compiler_hash=_digest(Path(self.init_request['typescript']))
+        identity=json.dumps(self.init_request,sort_keys=True)+self.script+self.compiler_hash
         key=hashlib.sha256(identity.encode()).hexdigest()
         directory=project.interop_options['cache_dir'] or project.root/'.gs-cache'
         self.cache_file=Path(directory)/'v0.4-native'/(key+'.json')
@@ -39,7 +41,7 @@ class Declarations:
                 data=json.loads(self.cache_file.read_text(encoding='utf-8'))
                 if data['schema']==1 and all(_fingerprint(p['file'],p['kind'])==p['fingerprint'] for p in data['dependencies']):
                     entries=data['queries']
-                    if self._valid_queries(entries):self.cache=dict(entries)
+                    if self._valid_queries(entries):self.cache=dict(entries);self.dependencies=data['dependencies']
             except (OSError,ValueError,KeyError,TypeError,AttributeError):pass
         try:
             result=self.query(**self.init_request)
@@ -60,7 +62,7 @@ class Declarations:
                     if not isinstance(result,dict) or not isinstance(result.get('type'),int):return False
                     if action=='resolve' and not isinstance(result.get('value'),int):return False
                 elif action=='describe':
-                    if not isinstance(result,dict) or result.get('kind') not in ('any','unknown','never','number','string','bool','void','null','undefined','foreign','literal','param','union','array','promise'):return False
+                    if not isinstance(result,dict) or result.get('kind') not in ('any','unknown','never','number','string','bool','void','null','undefined','foreign','literal','param','union','array','promise','indexed','conditional','template','string_mapping'):return False
                     if result['kind'] in ('union','array','promise') and not all(isinstance(x,int) for x in result['args']):return False
                     if result['kind']=='foreign':
                         if not isinstance(result.get('calls'),list) or not isinstance(result.get('constructors'),list):return False
@@ -70,6 +72,10 @@ class Declarations:
                             if not all(isinstance(p,dict) and isinstance(p.get('name'),str) and isinstance(p.get('type'),int) for p in sig['parameters']):return False
                     if result['kind']=='param' and (not isinstance(result.get('name'),str) or result.get('constraint') is not None and not isinstance(result.get('constraint'),int)):return False
                     if result['kind']=='literal' and result.get('base') not in ('number','string','bool'):return False
+                elif action=='global_type':
+                    if result is not None and (not isinstance(result,dict) or not isinstance(result.get('value'),int)):return False
+                elif action=='type_text':
+                    if not isinstance(result,str):return False
                 elif action=='property':
                     if result is not None and (not isinstance(result,dict) or not isinstance(result.get('type'),int) or not isinstance(result.get('optional'),bool) or not isinstance(result.get('readonly'),bool) or result.get('access') not in ('public','private','protected')):return False
                 elif action=='fields':
@@ -109,7 +115,9 @@ class Declarations:
     def query(self,**query):
         key=json.dumps(query,sort_keys=True)
         if key in self.cache:return self.cache[key]
-        if self.closed:raise CompileError('declaration metadata was not prepared during GS checking')
+        if self.closed:
+            self.closed=False
+            self.process=None
         if self.process is None:self._start()
         result=self._exchange(query)
         self.cache[key]=result
@@ -129,7 +137,7 @@ class Declarations:
         elif kind=='literal':typ=Type('literal',json.dumps(d['value'],ensure_ascii=False,separators=(',',':')),(primitives[d['base']],))
         elif kind=='param':typ=Type('param',d['name']+'@'+str(id),(self.typ(d['constraint']) if d['constraint'] is not None else UNKNOWN,))
         elif kind=='union':typ=union(*(self.typ(t) for t in d['args']))
-        else:typ=Type(kind,args=tuple(self.typ(t) for t in d['args']))
+        else:typ=Type(kind,d.get('name',''),args=tuple(self.typ(t) for t in d['args']))
         self.type_cache[id]=typ
         return typ
 
@@ -144,6 +152,7 @@ class Declarations:
             try:
                 dependencies=self._exchange({'action':'dependencies'})
                 fingerprints=[{**p,'fingerprint':_fingerprint(p['file'],p['kind'])} for p in dependencies]
+                self.dependencies=fingerprints
                 if self.use_cache and all(not p.get('readHash') or p['fingerprint'] is not None and p['fingerprint'][1]==p['readHash'] for p in fingerprints):
                     from .project import write_output
                     write_output(self.cache_file,json.dumps({'schema':1,'queries':list(self.cache.items()),'dependencies':fingerprints}))
@@ -155,3 +164,4 @@ class Declarations:
                 self.thread.join(timeout=5)
                 self.process.stdout.close()
                 self.temporary.cleanup()
+                self.process=None

@@ -245,13 +245,13 @@ console.log(label, twice(21), p.Greet())
             output = root / 'build'
             result = self.cli(entry, '--out-dir', output)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(len(list(output.rglob('*.mjs'))), 4)
-            result = subprocess.run(['node', str(output / 'app.mjs')], text=True, capture_output=True, timeout=10)
+            self.assertEqual(len(list(output.rglob('*.js'))), 4)
+            result = subprocess.run(['node', str(output / 'app.js')], text=True, capture_output=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, 'answer 42 Sofia\n')
-            original = (output / 'app.mjs').read_text()
+            original = (output / 'app.js').read_text()
             self.assertEqual(self.cli(entry, '--out-dir', output).returncode, 0)
-            self.assertEqual((output / 'app.mjs').read_text(), original)
+            self.assertEqual((output / 'app.js').read_text(), original)
 
     def test_cyclic_imports(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -291,7 +291,7 @@ console.log(label, twice(21), p.Greet())
             self.assertIn('outside project root', result.stderr)
             result = self.cli(entry, '--out-dir', root / 'build', '--root', root)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertTrue((root / 'build/src/main.mjs').exists())
+            self.assertTrue((root / 'build/src/main.js').exists())
             entry.write_text('import "./missing.gos"')
             self.assertIn('module not found', self.cli(entry, '--out-dir', root / 'build').stderr)
 
@@ -319,7 +319,7 @@ console.log(label, twice(21), p.Greet())
             self.assertIn('line 2:13', result.stderr)
             self.assertIn('console.log(@)', result.stderr)
             self.assertIn('^', result.stderr)
-        self.assertEqual(self.cli('--version').stdout, 'gscript 0.4.0\n')
+        self.assertEqual(self.cli('--version').stdout, 'gscript 0.5.0\n')
 
 
 if __name__ == '__main__':

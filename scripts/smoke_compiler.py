@@ -69,6 +69,13 @@ def main():
             result = run(['node', str(external_entry)], cwd=root)
             if result.stdout != '7\n':
                 raise AssertionError(result.stdout)
+        modern = root / 'main.gs'
+        modern.write_text('export func twice(n int) int { return n*2 }\nprintln(twice(3))')
+        run([*compiler, str(modern), '--sourcemap', '--declaration'], cwd=root, env=environment)
+        assert run(['node', '--enable-source-maps', str(root/'dist/main.js')], cwd=root).stdout == '6\n'
+        assert (root/'dist/main.js.map').is_file() and (root/'dist/main.d.ts').is_file()
+        run([*compiler, str(modern), '--ts-compiler', 'ts', '--typescript', str(ROOT/'node_modules/typescript'), '--out-dir', str(root/'official')], cwd=root, env=environment)
+        assert run(['node', str(root/'official/main.js')], cwd=root).stdout == '6\n'
         bad = root / 'bad.gs'
         target = root / 'existing.mjs'
         target.write_text('unchanged')

@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 import json
 import re
+from typing import NamedTuple
 
 
 class CompileError(ValueError):
@@ -20,8 +21,7 @@ class Node:
     line: int = 1
 
 
-@dataclass
-class Token:
+class Token(NamedTuple):
     text: str
     line: int
     kind: str
@@ -190,9 +190,12 @@ class Parser:
     def params(self):
         self.take('(')
         params = []
+        spans = {}
         self.separators()
         while not self.at(')'):
+            token=self.token
             name = self.name()
+            spans[name]=(token.line,token.column,token.line,token.column+len(name))
             typ = self.type_name() if not self.at(',') and not self.at(')') else None
             params.append((name, typ))
             if not self.accept(','):
@@ -202,6 +205,7 @@ class Parser:
         for index in range(len(params) - 2, -1, -1):
             if params[index][1] is None and params[index + 1][1] is not None:
                 params[index] = (params[index][0], params[index + 1][1])
+        self.parameter_spans=spans
         return [(name, typ or 'any') for name, typ in params]
 
     def function(self, asynchronous=False, anonymous=False):
@@ -220,12 +224,15 @@ class Parser:
     def declaration(self):
         line = self.token.line
         kind = self.take()
+        token=self.token
         name = self.name()
         typ = None if self.at('=') else self.type_name()
         expr = self.expression() if self.accept('=') else None
         if kind == 'const' and expr is None:
             self.fail('const requires an initializer')
-        return Node('decl', (kind, name, typ), [expr], line)
+        node=Node('decl', (kind, name, typ), [expr], line)
+        node.binding_spans={name:(token.line,token.column,token.line,token.column+len(name))}
+        return node
 
     def simple(self, composite=True):
         line = self.token.line
@@ -337,7 +344,12 @@ class Parser:
                     expr = self.expression(composite=False)
                     if parenthesized:
                         self.take(')')
-                    return Node('range', names, [expr, self.block()], line)
+                    node=Node('range', names, [expr, self.block()], line)
+                    node.binding_spans={t.text:(t.line,t.column,t.line,t.column+len(t.text)) for t in self.tokens[checkpoint:self.i] if t.text in names and t.kind=='name'}
+                    # Select the declarations in the loop header, before any body references.
+                    for t in reversed(self.tokens[checkpoint:self.i]):
+                        if t.text in names:node.binding_spans[t.text]=(t.line,t.column,t.line,t.column+len(t.text))
+                    return node
             self.i = checkpoint
             init = self.simple(composite=False)
             if self.accept(';'):
@@ -357,10 +369,13 @@ class Parser:
             self.separators()
             self.take('catch')
             paren = self.accept('(')
+            error_token=self.token
             error = self.name()
             if paren:
                 self.take(')')
-            return Node('try', error, [body, self.block()], line)
+            node=Node('try', error, [body, self.block()], line)
+            node.binding_spans={error:(error_token.line,error_token.column,error_token.line,error_token.column+len(error))}
+            return node
         if word == 'throw':
             self.take()
             return Node('throw', children=[self.expression()], line=line)
@@ -386,6 +401,7 @@ class Parser:
             left = self.function(True, True)
         elif word == 'new':
             self.take()
+            constructor_token=self.token
             name = self.name()
             while self.accept('.'):
                 name += '.' + self.name()
@@ -398,6 +414,7 @@ class Parser:
             self.take('(')
             left = Node('new', name, self.list_values(')'), line)
             left.type_args = type_args
+            left.constructor_name_span=(constructor_token.line,constructor_token.column,constructor_token.line,constructor_token.column+len(name.split('.')[0]))
         elif self.accept('('):
             self.separators()
             left = self.expression()
@@ -445,8 +462,10 @@ class Parser:
                 left.optional_chain=not getattr(previous,'parenthesized',False) and (previous.kind.startswith('optional_') or getattr(previous,'optional_chain',False))
             elif composite and left.kind in ('name', 'type_apply') and self.accept('{'):
                 applied = left if left.kind == 'type_apply' else None
+                constructor_node=applied.children[0] if applied else left
                 left = Node('composite', applied.children[0].value if applied else left.value, self.properties(), line)
                 left.type_args = applied.value if applied else []
+                left.constructor_name_span=getattr(constructor_node,'name_span',None)
             elif self.token.text in self.PRECEDENCE and self.PRECEDENCE[self.token.text] >= minimum:
                 op = self.take()
                 if op in ('??', 'instanceof'): self.extended = True
@@ -484,10 +503,16 @@ class Parser:
             else:
                 if self.token.kind not in ('name', 'string'):
                     self.fail('expected property name')
+                key_token=self.token
                 key_line = self.token.line
                 key = self.take()
-                value = self.expression() if self.accept(':') else Node('name', key, line=key_line)
-                values.append(Node('property', key, [value], key_line))
+                explicit=self.accept(':')
+                value = self.expression() if explicit else Node('name', key, line=key_line)
+                if not explicit:value.name_span=(key_token.line,key_token.column,key_token.line,key_token.column+len(key))
+                item=Node('property', key, [value], key_line)
+                item.key_span=(key_token.line,key_token.column,key_token.line,key_token.column+len(key))
+                item.shorthand=not explicit
+                values.append(item)
             self.separators()
             if not self.accept(','):
                 break
@@ -496,43 +521,64 @@ class Parser:
         return values
 
 
-def parse_code(source):
+def parse_code(source, positions=False):
     try:
         from .extended_parser import ExtendedParser
         parser = ExtendedParser(source)
         # Capture source spans once for diagnostics, maps and editor operations.
-        for method_name in ('statement','expression','function','declaration'):
-            original=getattr(parser,method_name)
-            def located(*args,_original=original,**kwargs):
-                start=parser.i
-                node=_original(*args,**kwargs)
-                if isinstance(node,Node):
-                    first,last=parser.tokens[start],parser.tokens[max(start,parser.i-1)]
-                    node.span=(first.line,first.column,last.line,last.column+len(last.text))
-                return node
-            setattr(parser,method_name,located)
+        if positions:
+            for method_name in ('statement','expression','function','declaration'):
+                original=getattr(parser,method_name)
+                def located(*args,_original=original,**kwargs):
+                    start=parser.i
+                    node=_original(*args,**kwargs)
+                    if isinstance(node,Node):
+                        first,last=parser.tokens[start],parser.tokens[max(start,parser.i-1)]
+                        node.span=(first.line,first.column,last.line,last.column+len(last.text))
+                    return node
+                setattr(parser,method_name,located)
         program = Node('program', children=parser.program())
-        statements=[]
-        def collect(value):
-            if isinstance(value,Node):
-                if hasattr(value,'span') and value.kind not in ('name','number','string','binary','member','call','index','lambda','array','object','composite','new','unary','spread','property') and not value.kind.startswith('optional_'):statements.append(value)
-                for child in value.children:collect(child)
-            elif isinstance(value,list):
-                for child in value:collect(child)
-        collect(program)
-        statements.sort(key=lambda n:n.span[:2])
-        program.trailing_comments=[]
-        from bisect import bisect_left
-        statement_lines=[n.span[0] for n in statements]
-        for comment,line,column in parser.tokens.comments:
-            index=bisect_left(statement_lines,line)
-            if index<len(statements):
-                node=statements[index]
-                if not hasattr(node,'leading_comments'):node.leading_comments=[]
-                node.leading_comments.append(comment)
-            else:program.trailing_comments.append(comment)
-        program.tokens=tuple(parser.tokens)
-        program.source_text=source
+        if positions or parser.tokens.comments:
+            statements=[]
+            def collect(value):
+                if isinstance(value,Node):
+                    collect(value.value)
+                    for child in value.children:collect(child)
+                    if positions and not hasattr(value,'span'):
+                        spans=[getattr(value,'name_span',None),getattr(value,'key_span',None)]
+                        spans.extend(getattr(child,'span',None) for child in value.children if isinstance(child,Node))
+                        spans=[s for s in spans if s]
+                        if spans:value.span=(*min(s[:2] for s in spans),*max(s[2:] for s in spans))
+                    if value.kind in ('func','struct','interface','alias','enum','decl','assign','expr','return','if','for','range','switch','throw','try','break','continue','default','import','export'):
+                        if not hasattr(value,'span'):value.span=(value.line,1,value.line,1)
+                        statements.append(value)
+                elif isinstance(value,(list,tuple)):
+                    for child in value:collect(child)
+            collect(program)
+            statements.sort(key=lambda n:n.span[:2])
+            program.trailing_comments=[]
+            from bisect import bisect_left
+            statement_lines=[n.span[0] for n in statements]
+            for comment,line,column in parser.tokens.comments:
+                index=bisect_left(statement_lines,line)
+                if index<len(statements):
+                    node=statements[index]
+                    if not hasattr(node,'leading_comments'):node.leading_comments=[]
+                    node.leading_comments.append(comment)
+                else:program.trailing_comments.append(comment)
+            if positions:
+                from .checker import import_names
+                for node in statements:
+                    if node.kind=='import':
+                        candidates=[t for t in parser.tokens if t.kind=='name' and node.span[:2]<=(t.line,t.column)<=node.span[2:]]
+                        node.binding_spans={}
+                        for name in import_names(node.value[0]):
+                            matching=[t for t in candidates if t.text==name]
+                            if matching:
+                                token=matching[-1];node.binding_spans[name]=(token.line,token.column,token.line,token.column+len(name))
+            program.tokens=tuple(parser.tokens)
+            program.source_text=source
+        program.position_info=positions
         program.extended = parser.extended
         program.identifiers = frozenset(token.text for token in parser.tokens if token.kind == 'name')
         return program

@@ -22,5 +22,13 @@ exports.run = async function () {
   assert(hovers.some(h=>h.contents.some(c=>(c.value || '').replace(/&nbsp;/g, ' ').includes('value: int'))), JSON.stringify(hovers));
   const completions = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider',uri,new vscode.Position(1,0));
   assert(completions.items.some(i=>i.label==='value'));
-  console.log('VSCode real extension host: diagnostics, unsaved edits, hover and completion passed');
+  const definitions = await vscode.commands.executeCommand('vscode.executeDefinitionProvider',uri,new vscode.Position(1,13));
+  assert(definitions.some(d=>d.uri.toString()===uri.toString() && d.range.start.line===0));
+  const refs = await vscode.commands.executeCommand('vscode.executeReferenceProvider',uri,new vscode.Position(1,13));
+  assert(refs.length>=1);
+  const rename = await vscode.commands.executeCommand('vscode.executeDocumentRenameProvider',uri,new vscode.Position(1,13),'total');
+  assert(rename && rename.size>0);
+  const formatting = await vscode.commands.executeCommand('vscode.executeFormatDocumentProvider',uri,{tabSize:2,insertSpaces:true});
+  assert(Array.isArray(formatting));
+  console.log('VSCode installed VSIX: diagnostics, unsaved edits, hover, completion, definition, references, rename and formatting passed');
 };

@@ -3,6 +3,10 @@
   "scopeName": "source.gscript",
   "patterns": [
     {
+      "name": "support.function.builtin.gscript",
+      "match": "\\b(print|println|printf|len|panic)\\b"
+    },
+    {
       "name": "comment.line.double-slash.gs",
       "begin": "//",
       "end": "$"

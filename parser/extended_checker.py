@@ -75,6 +75,9 @@ class ExtendedChecker(Checker):
         return symbol
 
     def declared_type(self, node, name):
+        if name:
+            for word in re.findall(r'[A-Za-z_$][\w$]*',name):
+                if word in self.scopes[0]:self.scopes[0][word].type_used=True
         if name is None: return VOID
         name = name.strip()
         if name.startswith('(') and name.endswith(')') and len(split_type(name[1:-1], '|')) >= 1:
@@ -403,6 +406,12 @@ class ExtendedChecker(Checker):
         return target.checker.with_context(target.node,target.node.value[1],context)
 
     def _compatible(self, expected, actual):
+        if expected.kind in ('indexed','conditional','string_mapping'):
+            resolved=self.resolve_operator(Node('type'),expected)
+            if resolved!=expected:return self.compatible(resolved,actual)
+        if actual.kind in ('indexed','conditional','string_mapping'):
+            resolved=self.resolve_operator(Node('type'),actual)
+            if resolved!=actual:return self.compatible(expected,resolved)
         if expected.kind=='recursive' or actual.kind=='recursive':return self.compatible(self.expand(expected),self.expand(actual))
         if expected.kind=='foreign' or actual.kind=='foreign':
             return self.foreign_compatible(expected,actual)
@@ -598,6 +607,8 @@ class ExtendedChecker(Checker):
         if base.kind=='foreign':
             entry=self.declarations.property(base,key)
             if not entry:self.fail(n,'unknown external member: '+key)
+            n.deprecated=entry.get('deprecated',False)
+            n.external_definition=entry.get('definition',[])
             if entry['access']=='private':self.fail(n,'private external member: '+key)
             if entry['access']=='protected':
                 current=self.current_class
@@ -610,13 +621,28 @@ class ExtendedChecker(Checker):
                     current=parent.name if parent and parent.kind=='struct' else None
                 if not allowed:self.fail(n,'protected external member: '+key)
             result=self.declarations.typ(entry['type'])
-            result=substitute(result,self.foreign_mapping(base))
+            bound=self.foreign_mapping(base)
+            result=self.resolve_operator(n,self.foreign_substitute(result,bound))
+            if result.kind=='foreign' and bound:
+                result=Type(result.kind,result.name,result.args,tuple({**dict(result.fields),**bound}.items()))
             return union(result,UNDEFINED) if entry['optional'] else result
         if base.kind in ('struct','interface','constructor','enum'):
             static = base.kind in ('constructor','enum')
             self.access_member(n,base,key)
             members = self.structs[base.name].statics if base.kind == 'enum' else self.members(base,static)
-            if key in members: return members[key]
+            if key in members:
+                current=base
+                while current and current.kind in ('struct','interface','constructor','enum'):
+                    owner=self.structs[current.name]
+                    own=owner.statics if static else {**owner.fields,**owner.methods}
+                    if key in own:
+                        method=getattr(owner,'method_nodes',{}).get(key)
+                        span=getattr(method,'declaration_span',None) if method else getattr(owner.node,'field_spans',{}).get(key)
+                        n.member_key=(current.name,static,key)
+                        n.member_definition=(owner.checker.module_id,span)
+                        break
+                    current=getattr(owner,'base',None)
+                return members[key]
             target = self.structs[base.name]
             if target.base and (is_external(target.base) or target.base.kind=='foreign'): return self.property(n,target.base,key)
             self.fail(n,'unknown '+('static ' if static else '')+'member: '+key)
@@ -624,7 +650,7 @@ class ExtendedChecker(Checker):
 
     def infer(self,formal,actual,mapping):
         if formal.kind == 'param':
-            actual = widen(actual)
+            if not ('@' in formal.name and formal.args and formal.args[0] not in (ANY,UNKNOWN)):actual = widen(actual)
             if formal.name in mapping: mapping[formal.name] = union(mapping[formal.name],actual)
             else: mapping[formal.name] = actual
         elif formal.kind == actual.kind:
@@ -749,7 +775,8 @@ class ExtendedChecker(Checker):
                 return self.call_signature(n,callee,[self.expr(a) for a in c[1:]])
         if k in ('new','composite'):
             names = v.split('.')
-            constructor = self.lookup(n,names[0]).typ
+            n.constructor_symbol=self.lookup(n,names[0])
+            constructor = n.constructor_symbol.typ
             for name in names[1:]: constructor = self.property(n,constructor,name)
             if constructor.kind=='foreign' and k=='new':
                 return self.foreign_call(n,constructor,[self.expr(a) for a in c],construct=True,type_args=[self.declared_type(n,t) for t in getattr(n,'type_args',[])])
@@ -816,9 +843,13 @@ class ExtendedChecker(Checker):
                 return BOOL
             if v in ('<','>','<=','>='):
                 if not (numeric(left) or left in (STRING,ANY)) or not (numeric(right) or right in (STRING,ANY)): self.fail(n,'comparison requires matching numbers or strings')
-                self.check(n,left,right); return BOOL
+
+                if not (numeric(left) and numeric(right) and NUMBER in (left,right)):self.check(n,left,right)
+                return BOOL
             if v == '+' and left == right == STRING: return STRING
-            self.check(n,NUMERIC,left); self.check(n,NUMERIC,right); self.check(n,left,right); return FLOAT if v=='/' and left==INT else left
+            self.check(n,NUMERIC,left); self.check(n,NUMERIC,right)
+            if NUMBER in (left,right):return NUMBER
+            self.check(n,left,right); return FLOAT if v=='/' and left==INT else left
         return super().expression(n)
 
     def foreign_constructor(self,typ):
@@ -859,10 +890,40 @@ class ExtendedChecker(Checker):
             self.infer(self.declarations.typ(argument),actual,mapping)
         return mapping
 
+    def resolve_operator(self,node,typ):
+        if typ.kind=='union':return union(*(self.resolve_operator(node,t) for t in typ.args))
+        if typ.kind in ('array','promise'):return Type(typ.kind,typ.name,tuple(self.resolve_operator(node,t) for t in typ.args))
+        if typ.kind=='indexed':
+            base,index=typ.args
+            if index.kind=='literal' and index.args[0]==STRING:return self.property(node,base,json.loads(index.name))
+            if index.kind=='union':return union(*(self.resolve_operator(node,Type('indexed',args=(base,t))) for t in index.args))
+            if base.kind=='array' and numeric(index):return base.args[0]
+            return typ
+        if typ.kind=='conditional':
+            check,extends,yes,no=typ.args
+            if check.kind=='param':return typ
+            return self.resolve_operator(node,yes if self.compatible(extends,check) else no)
+        if typ.kind=='string_mapping' and typ.args[0].kind=='literal' and typ.args[0].args[0]==STRING:
+            text=json.loads(typ.args[0].name)
+            text={'Uppercase':str.upper,'Lowercase':str.lower,'Capitalize':lambda x:x[:1].upper()+x[1:],'Uncapitalize':lambda x:x[:1].lower()+x[1:]}.get(typ.name,lambda x:x)(text)
+            return Type('literal',json.dumps(text),(STRING,))
+        return typ
+
+    def foreign_substitute(self,typ,mapping):
+        typ=substitute(typ,mapping)
+        if typ.kind=='foreign':
+            description=self.declarations.describe(typ)
+            if not typ.args and description.get('parameters') and description.get('arguments'):
+                typ=Type('foreign',typ.name,tuple(substitute(self.declarations.typ(p),mapping) for p in description['arguments']),typ.fields)
+            return typ
+        if typ.kind in ('array','promise','union','indexed','conditional','template','string_mapping'):
+            return Type(typ.kind,typ.name,tuple(self.foreign_substitute(t,mapping) for t in typ.args),typ.fields)
+        return typ
+
     def foreign_signature(self,description,mapping=None):
         mapping={} if mapping is None else dict(mapping)
-        params=[substitute(self.declarations.typ(p['type']),mapping) for p in description['params']]
-        result=substitute(self.declarations.typ(description['result']),mapping)
+        params=[self.foreign_substitute(self.declarations.typ(p['type']),mapping) for p in description['params']]
+        result=self.foreign_substitute(self.declarations.typ(description['result']),mapping)
         return params,result
 
     def foreign_call(self,n,callee,args,construct=False,type_args=None):
@@ -871,13 +932,16 @@ class ExtendedChecker(Checker):
         for sig in signatures:
             try:
                 parameters=sig.get('parameters',[])
-                mapping={}
+                mapping=dict(callee.fields)
                 if type_args:
                     if len(type_args)!=len(parameters):self.fail(n,'incorrect external type arguments')
-                    mapping={self.declarations.typ(p['type']).name:t for p,t in zip(parameters,type_args)}
+                    mapping.update({self.declarations.typ(p['type']).name:t for p,t in zip(parameters,type_args)})
                 raw,_=self.foreign_signature(sig)
-                if not mapping:
-                    for formal,actual in zip(raw,args):self.infer(formal,actual,mapping)
+                if not type_args:
+                    inferred={}
+                    for formal,actual in zip(raw,args):self.infer(formal,actual,inferred)
+                    for key,value in inferred.items():
+                        if key not in mapping:mapping[key]=value
                 for p in parameters:
                     typ=self.declarations.typ(p['type'])
                     if typ.name not in mapping:mapping[typ.name]=typ.args[0]
@@ -896,9 +960,9 @@ class ExtendedChecker(Checker):
                     if formal:
                         arguments=description.get('arguments',[]) or formal
                         result=Type('foreign',result.name,tuple(substitute(self.declarations.typ(p),mapping) for p in arguments))
-                return result
+                return self.resolve_operator(n,result)
             except CompileError as e:errors.append(str(e))
-        self.fail(n,'external '+('constructor' if construct else 'call')+' type mismatch'+(': '+errors[0] if errors else ': value is not callable'))
+        self.fail(n,'external '+('constructor' if construct else 'call')+' type mismatch'+(': '+min(errors,key=len) if errors else ': value is not callable'))
 
     def foreign_compatible(self,expected,actual):
         if expected==actual or expected in (ANY,UNKNOWN) or actual in (ANY,NEVER):return True
@@ -907,7 +971,14 @@ class ExtendedChecker(Checker):
         if expected.kind=='param':return expected==actual
         if actual.kind=='param':return self.compatible(expected,actual.args[0])
         if expected.kind=='foreign':
+            if actual.kind=='foreign' and not expected.args and not actual.args and self.foreign_subclass(actual,expected.name):return True
             description=self.declarations.describe(expected)
+            if description.get('symbolName') in ('Iterable','IterableIterator','Iterator','ArrayLike') and actual.kind in ('array','iterator','tuple'):
+                mapping=self.foreign_mapping(expected)
+                parameters=description.get('parameters',[])
+                desired=mapping.get(self.declarations.typ(parameters[0]).name,ANY) if parameters else ANY
+                element=union(*actual.args) if actual.kind=='tuple' else actual.args[0]
+                return self.compatible(desired,element)
             if description.get('isFunctionObject') and actual.kind in ('constructor','function','generic_function'):return True
             if description['constructors'] and actual.kind=='constructor':
                 instance=Type('struct',actual.name,actual.args)
@@ -1001,7 +1072,7 @@ class ExtendedChecker(Checker):
                 desired = {'string':STRING,'number':NUMBER,'boolean':BOOL,'undefined':UNDEFINED}.get(decode_string(right.value))
                 equal = (condition.value == '==') == truth
                 candidates = original.args if original.kind == 'union' else (original,)
-                symbol.typ = union(*(t for t in candidates if (widen(t)==desired) == equal));changes.append((symbol,original))
+                symbol.typ = union(*(t for t in candidates if ((numeric(t) if desired==NUMBER else widen(t)==desired)) == equal));changes.append((symbol,original))
         if condition.kind=='binary' and condition.value=='instanceof' and condition.children[0].kind=='name':
             left,right=condition.children
             symbol=self.lookup(left,left.value);original=symbol.typ
@@ -1052,7 +1123,9 @@ class ExtendedChecker(Checker):
                     with self.scope():
                         if c[0].kind == 'name' and case.value:
                             original = self.lookup(c[0],c[0].value)
-                            self.scopes[-1][c[0].value] = Symbol(union(*(self.types[id(x)] for x in case.value)),original.constant)
+                            narrowed=Symbol(union(*(self.types[id(x)] for x in case.value)),original.constant)
+                            narrowed.semantic_target=original
+                            self.scopes[-1][c[0].value] = narrowed
                         self.statements(case.children)
                 finally: self.switch_depth -= 1
             if defaults>1: self.fail(n,'duplicate default')

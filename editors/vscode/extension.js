@@ -16,7 +16,7 @@ async function activate(context) {
     }, {
       documentSelector:[{scheme:'file',language:'gscript'}],
       synchronize:{fileEvents:watcher}, outputChannel:output,
-      initializationOptions:{strictNull:config.get('strictNull',false)}
+      initializationOptions:{strictNull:config.get('strictNull',null)}
     });
     await client.start();
   } catch (error) {

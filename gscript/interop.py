@@ -34,12 +34,15 @@ def find_typescript(entry, override=None):
             candidate = candidate / 'lib/typescript.js'
         if candidate.is_file():
             return candidate
-        raise CompileError(f'TypeScript compiler not found: {candidate}')
+        # Native TS 7 has no legacy compiler API. Resolve a separate metadata API.
+        if not (Path(override).is_dir() and (Path(override)/'package.json').is_file()):
+            raise CompileError(f'TypeScript compiler not found: {candidate}')
+        # Continue through API candidates below.
     for parent in dict.fromkeys([entry.parent, *entry.parent.parents, Path(__file__).resolve().parent.parent]):
-        candidate = parent / 'node_modules/typescript/lib/typescript.js'
-        if candidate.is_file():
-            return candidate.resolve()
-    raise CompileError('external module checking requires TypeScript; run npm install --save-dev typescript@5.9.3 in your project or use --typescript PATH')
+        for package in ('typescript','typescript-api','@gscript/typescript-api'):
+            candidate=parent/'node_modules'/package/'lib/typescript.js'
+            if candidate.is_file():return candidate.resolve()
+    raise CompileError('external type metadata requires a TypeScript 5.9/6.0 compiler API; install typescript@6.0.3, or with native TS 7 install typescript-api@npm:typescript@6.0.3')
 
 
 class ExternalChecker:

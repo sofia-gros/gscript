@@ -280,6 +280,10 @@
         },
         {
           "type": "STRING",
+          "value": "float64"
+        },
+        {
+          "type": "STRING",
           "value": "number"
         },
         {
@@ -296,7 +300,35 @@
         },
         {
           "type": "STRING",
+          "value": "unknown"
+        },
+        {
+          "type": "STRING",
+          "value": "never"
+        },
+        {
+          "type": "STRING",
           "value": "void"
+        },
+        {
+          "type": "STRING",
+          "value": "try"
+        },
+        {
+          "type": "STRING",
+          "value": "catch"
+        },
+        {
+          "type": "STRING",
+          "value": "throw"
+        },
+        {
+          "type": "STRING",
+          "value": "typeof"
+        },
+        {
+          "type": "STRING",
+          "value": "instanceof"
         }
       ]
     },

@@ -6,3 +6,6 @@
 (operator) @operator
 (delimiter) @punctuation.delimiter
 ["{" "}" "[" "]" "(" ")"] @punctuation.bracket
+
+((identifier) @function.builtin
+  (#match? @function.builtin "^(print|println|printf|len|panic)$"))

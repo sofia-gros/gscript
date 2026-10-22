@@ -1,26 +1,26 @@
 # VSCode・Zedへの導入
 
-対象はGSコンパイラv0.4.0用プラグインの**修正版r2**です。拡張・言語サーバーの言語バージョンは0.4.0のまま、配布を`plugin-v0.4.0-r2`で区別します。
+対象はGSコンパイラ・言語サーバーv0.5.0です。
 
-[修正版のダウンロード](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.4.0-r2)
+[v0.5.0版のダウンロード](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.5.0)
 
 ## VSCode
 
 ### インストール
 
 1. VSCode 1.85以降を使用します。
-2. [Python公式サイト](https://www.python.org/downloads/)からPython 3.12以降をインストールします。VSCodeを終了し、起動し直してください。既にネイティブ版`gs-lsp 0.4.0`を使っている場合、Pythonは不要です。
-3. 修正版Releaseの`gscript-v0.4.0.vsix`をダウンロードします。
+2. [Python公式サイト](https://www.python.org/downloads/)からPython 3.12以降をインストールします。VSCodeを終了し、起動し直してください。既にネイティブ版`gs-lsp 0.5.0`を使っている場合、Pythonは不要です。
+3. v0.5.0版Releaseの`gscript-v0.5.0.vsix`をダウンロードします。
 4. VSCodeの拡張機能ビューを開き、右上の「…」→「VSIXからのインストール…」で選択します。
 5. 「Developer: Reload Window」で再読み込みし、プロジェクトのフォルダーを開きます。
 
-`code`コマンドが利用できる環境では、ダウンロードしたディレクトリーで次も使えます。初版からの更新は同じバージョンのため`--force`を指定します。
+`code`コマンドが利用できる環境では、ダウンロードしたディレクトリーで次も使えます。既存拡張から更新する場合も同じ手順です。
 
 ```sh
-code --install-extension ./gscript-v0.4.0.vsix --force
+code --install-extension ./gscript-v0.5.0.vsix --force
 ```
 
-VSIXには言語サーバーのPython zipappを同梱しています。起動順は、ユーザー指定の実行ファイル → PATH上の`gs-lsp 0.4.0` → Python 3.12以降による同梱サーバーです。ソースリポジトリーやコンパイラの別途インストールは不要です。
+VSIXには言語サーバーのPython zipappを同梱しています。起動順は、ユーザー指定の実行ファイル → PATH上の`gs-lsp 0.5.0` → Python 3.12以降による同梱サーバーです。ソースリポジトリーやコンパイラの別途インストールは不要です。
 
 ### 動作確認
 
@@ -60,7 +60,7 @@ Windowsのネイティブ版:
 ```json
 {
   "gscript.server.path": "/absolute/path/to/python3",
-  "gscript.server.args": ["/absolute/path/to/gs-lsp-v0.4.0.pyz", "--stdio"]
+  "gscript.server.args": ["/absolute/path/to/gs-lsp-v0.5.0.pyz", "--stdio"]
 }
 ```
 
@@ -85,13 +85,13 @@ git --version
 
 ### インストール
 
-1. 修正版Releaseから`gscript-zed-v0.4.0.zip`を取得して展開します。
+1. v0.5.0版Releaseから`gscript-zed-v0.5.0.zip`を取得して展開します。
 2. 展開した`gscript-zed`フォルダーを、削除しない場所へ移動します。開発拡張はこのフォルダーを参照し続けます。
 3. Zedのコマンドパレットで`zed: extensions`を開き、**Install Dev Extension**を選びます。
 4. `extension.toml`と`Cargo.toml`がある`gscript-zed`フォルダーを選択します。ZIP自体や、その1つ上のフォルダーは選びません。
 5. ビルド完了後、GSプロジェクトのフォルダーを開き、`hello.gs`を開きます。言語表示が`GS`になり、キーワード等が色分けされます。
 
-初版を導入済みの場合は、Extensionsから古い開発拡張を削除してから修正版のフォルダーを選び直してください。修正版はZed Extension API 0.6を使います。APIの対応範囲は[Zed公式互換表](https://github.com/zed-industries/zed/tree/main/crates/extension_api#compatible-zed-versions)を参照してください。
+初版を導入済みの場合は、Extensionsから古い開発拡張を削除してからv0.5.0版のフォルダーを選び直してください。v0.5.0版はZed Extension API 0.6を使います。APIの対応範囲は[Zed公式互換表](https://github.com/zed-industries/zed/tree/main/crates/extension_api#compatible-zed-versions)を参照してください。
 
 ### 言語サーバー
 
@@ -113,7 +113,7 @@ git --version
 }
 ```
 
-Windowsでは`"path": "C:\\Users\\Alice\\Tools\\gs-lsp.exe"`のように指定します。Intel Mac・Linux ARM等では、Python 3.12以降の実行ファイルを`path`に、`["/absolute/path/to/gs-lsp-v0.4.0.pyz", "--stdio"]`を`arguments`に指定してください。
+Windowsでは`"path": "C:\\Users\\Alice\\Tools\\gs-lsp.exe"`のように指定します。Intel Mac・Linux ARM等では、Python 3.12以降の実行ファイルを`path`に、`["/absolute/path/to/gs-lsp-v0.5.0.pyz", "--stdio"]`を`arguments`に指定してください。
 
 ## エラーの確認方法
 
@@ -130,8 +130,8 @@ Windowsでは`"path": "C:\\Users\\Alice\\Tools\\gs-lsp.exe"`のように指定�
 
 ## 機能と検証範囲
 
-GSコンパイラ自身による構文・型・import診断、未保存GSモジュールの検査、型を確定した式のホバー、キーワード・トップレベルシンボルの補完、アウトラインを提供します。VSCodeはTextMate、ZedはGS専用の字句ベースTree-sitter文法で色分けします。
+GSの診断、ホバー、アウトライン、ローカル・プロパティ補完、定義ジャンプ、参照検索、リネーム、Signature Help、GSモジュールの自動import候補、Lint警告、ドキュメント整形を提供します。コンパイラのAST・シンボル・スコープを再利用し、未保存ファイルも検査します。リネームは編集後の型検査が成功した場合に編集案を返します。外部ライブラリーの定義は参照できますが書き換えません。ワークスペース内に型エラーがある場合は参照検索・リネーム前に修正してください。
 
-各入口についてコンパイラが最初に報告するエラーを表示します。型検査に失敗した文書では型ホバーを返しません。ローカル変数・メンバーの補完、定義ジャンプ、リネーム、整形は未提供です。検査は逐次実行で、外部型の初回読み込みには時間がかかります。ソースやJS出力は書き換えませんが、外部型のキャッシュを`.gs-cache`に作成する場合があります。
+gsconfig.jsonのstrictNull/libを共用します。VSCodeのgscript.strictNullは既定nullで設定へ追従し、true/falseで上書きできます。初回の外部型読み取りには時間がかかります。外部型キャッシュを.gs-cacheへ保存する場合があります。
 
-CIでは配布VSIXの実際のVSCode Extension Host接続、同梱サーバー、Rust/WASMビルド、Tree-sitter文法・クエリー、3OSのサーバー実行を確認します。Zed GUI上の開発拡張インストールを自動試験したという意味ではありません。
+CIは実際のVSIXをExtension Hostへインストールし、同梱サーバーとの接続を検査します。Zed用Rust/WASI2コンポーネント、Tree-sitterの生成・解析・クエリー・WASM、3OSのLSP実行も検査します。Zedの開発拡張導入は上記公式手順でローカル再ビルドされます。同梱WASMをZIPから直接インストールする機能ではありません。GUIによるZed導入の自動試験とは区別します。

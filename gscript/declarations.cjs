@@ -41,18 +41,25 @@ function describe(t) {
   if (checker.isArrayType(t) || checker.isTupleType(t)) return {kind:'array',args:[id(checker.getIndexTypeOfType(t,ts.IndexKind.Number))]};
   const promised=checker.getPromisedTypeOfPromise(t);
   if (promised) return {kind:'promise',args:[id(promised)]};
-  if(f & (F.Conditional|F.IndexedAccess|F.TemplateLiteral|F.StringMapping))throw Error('unsupported external type operator: '+checker.typeToString(t));
-  return {kind:'foreign', isFunctionObject:t.symbol?.name==='Function', isClass:!!t.isClass?.(), bases:t.isClassOrInterface?.() ? (checker.getBaseTypes(t)??[]).map(id) : [], parameters:(t.target?.typeParameters ?? t.typeParameters ?? []).map(id), arguments:((t.objectFlags & ts.ObjectFlags.Reference) ? checker.getTypeArguments(t) : []).map(id), calls:t.getCallSignatures().map(signature), constructors:t.getConstructSignatures().map(signature)};
+  if(f & F.IndexedAccess)return {kind:'indexed',args:[id(t.objectType),id(t.indexType)]};
+  if(f & F.Conditional){const node=t.root?.node;return {kind:'conditional',args:[id(t.checkType),id(t.extendsType),id(t.resolvedTrueType??checker.getTypeFromTypeNode(node.trueType)),id(t.resolvedFalseType??checker.getTypeFromTypeNode(node.falseType))]};}
+  if(f & F.TemplateLiteral)return {kind:'template',name:JSON.stringify(t.texts),args:t.types.map(id)};
+  if(f & F.StringMapping)return {kind:'string_mapping',name:t.symbol.name,args:[id(t.type)]};
+  return {kind:'foreign', symbolName:t.symbol?.name??'',deprecated:deprecated(t.symbol),isFunctionObject:t.symbol?.name==='Function', isClass:!!t.isClass?.(), bases:t.isClassOrInterface?.() ? (checker.getBaseTypes(t)??[]).map(id) : [], parameters:(t.target?.typeParameters ?? t.typeParameters ?? []).map(id), arguments:((t.objectFlags & ts.ObjectFlags.Reference) ? checker.getTypeArguments(t) : []).map(id), calls:t.getCallSignatures().map(signature), constructors:t.getConstructSignatures().map(signature)};
 }
 function property(t,name) {
   const p=checker.getPropertyOfType(t,name);
   return p ? symbolProperty(p) : null;
 }
+function definitions(symbol) {
+ return (symbol?.declarations ?? []).map(d=>{const sf=d.getSourceFile(), n=d.name ?? d;const start=sf.getLineAndCharacterOfPosition(n.getStart(sf));const end=sf.getLineAndCharacterOfPosition(n.getEnd());return {file:sf.fileName,line:start.line+1,column:start.character+1,endLine:end.line+1,endColumn:end.character+1};});
+}
+function deprecated(symbol) {return !!symbol?.getJsDocTags?.(checker)?.some(t=>t.name==='deprecated');}
 function symbolProperty(p) {
   const d=p.valueDeclaration ?? p.declarations?.[0];
   const flags=d ? ts.getCombinedModifierFlags(d) : 0;
   return {type:id(checker.getTypeOfSymbolAtLocation(p,d)),optional:!!(p.flags&ts.SymbolFlags.Optional),
-          readonly:!!(flags&ts.ModifierFlags.Readonly),owner:d?.parent?.symbol && ts.isClassLike(d.parent) ? id(checker.getDeclaredTypeOfSymbol(d.parent.symbol)) : null,access:flags&ts.ModifierFlags.Private?'private':flags&ts.ModifierFlags.Protected?'protected':'public'};
+          readonly:!!(flags&ts.ModifierFlags.Readonly),deprecated:deprecated(p),definition:definitions(p),owner:d?.parent?.symbol && ts.isClassLike(d.parent) ? id(checker.getDeclaredTypeOfSymbol(d.parent.symbol)) : null,access:flags&ts.ModifierFlags.Private?'private':flags&ts.ModifierFlags.Protected?'protected':'public'};
 }
 function init(r) {
   request=r;ts=require(r.typescript);
@@ -73,6 +80,13 @@ function init(r) {
     allowJs:true,checkJs:true,strict:true,noEmit:true,skipLibCheck:true,maxNodeModuleJsDepth:2,
     noUncheckedSideEffectImports:true,allowSyntheticDefaultImports:true,esModuleInterop:true,
     allowImportingTsExtensions:true};
+  if (parseInt(ts.version)>=6 && !options.ignoreDeprecations)options.ignoreDeprecations='6.0';
+  if(r.libraries?.length){
+    const libs=r.libraries.filter(n=>n!=='node');
+    if(!libs.some(n=>n.toLowerCase().startsWith('es')))libs.unshift('es2022');
+    options.lib=libs.map(n=>'lib.'+n.toLowerCase()+'.d.ts');
+    if(r.libraries.includes('node'))options.types=[...new Set([...(options.types??[]),'node'])];
+  }
   if (!options.typeRoots) {
     const roots=ts.getEffectiveTypeRoots(options,{getCurrentDirectory:()=>path.dirname(r.sources[0].fileName),directoryExists:ts.sys.directoryExists}) ?? [];
     roots.push(path.resolve(path.dirname(r.typescript),'../../@types')); options.typeRoots=[...new Set(roots)];
@@ -105,7 +119,7 @@ function run(r) {
     if(!s)throw Error('external binding not found: '+r.name);
     if(s.flags&ts.SymbolFlags.Alias)s=checker.getAliasedSymbol(s);
     const location=s.valueDeclaration ?? s.declarations?.[0] ?? sf;
-    return {value:id(checker.getTypeOfSymbolAtLocation(s,location)),type:id(checker.getDeclaredTypeOfSymbol(s))};
+    return {value:id(checker.getTypeOfSymbolAtLocation(s,location)),type:id(checker.getDeclaredTypeOfSymbol(s)),definition:definitions(s),deprecated:deprecated(s)};
   }
   if (r.action==='named_type') {
     const sf=program.getSourceFile(r.file);
@@ -124,9 +138,15 @@ function run(r) {
     if(!symbol)throw Error('unknown external type: '+r.name);
     return {type:id(checker.getDeclaredTypeOfSymbol(symbol))};
   }
+  if (r.action==='global_type'){
+    const sf=program.getSourceFile(r.file);
+    const symbol=checker.getSymbolsInScope(sf,ts.SymbolFlags.Value).find(s=>s.name===r.name);
+    return symbol ? {value:id(checker.getTypeOfSymbolAtLocation(symbol,symbol.valueDeclaration??symbol.declarations?.[0]??sf)),definition:definitions(symbol),deprecated:deprecated(symbol)} : null;
+  }
   if (r.action==='dependencies')return [...dependencies.values()];
   const t=objects[r.id];
   if (!t) throw Error('invalid external type reference');
+  if (r.action==='type_text')return checker.typeToString(t,program.getSourceFile(r.file),ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope);
   if (r.action==='describe')return describe(t);
   if (r.action==='property')return property(t,r.name);
   if (r.action==='fields')return checker.getPropertiesOfType(t).map(s=>({name:s.name,...symbolProperty(s)}));

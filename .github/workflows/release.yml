@@ -57,7 +57,7 @@ jobs:
           cd /tmp
           /tmp/gs-installed/bin/gs --version
           /tmp/gs-installed/bin/gs "$GITHUB_WORKSPACE/tests/fixtures/modules/main.gs" --out-dir /tmp/gs-built
-          node /tmp/gs-built/main.mjs
+          node /tmp/gs-built/main.js
       - uses: actions/upload-artifact@v4
         with:
           name: portable-compiler

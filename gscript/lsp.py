@@ -56,12 +56,16 @@ def declarations(program, text):
 
 class Server:
     def __init__(self, send):
+        from .cache import CheckSession
+        self.session=CheckSession(positions=True)
+        self.parse_cache=self.session.parse_cache
         self.send = send
         self.documents = {}
         self.projects = {}
+        self.partial_projects = {}
         self.published = set()
         self.roots = []
-        self.strict_null = False
+        self.strict_null = None
         self.stopped = False
 
     def notify(self, method, params):
@@ -74,12 +78,26 @@ class Server:
         diagnostics = {uri:[] for uri in self.documents}
         sources = {path_from_uri(uri):doc['text'] for uri,doc in self.documents.items()}
         self.projects = {}
+        self.partial_projects = {}
         for uri in self.documents:
             path = path_from_uri(uri)
+            project=None
             try:
-                project = Project(path, self.root_for(path), sources=sources, strict_null=self.strict_null).check()
+                from .build import configure
+                options=configure(path,root=self.root_for(path),strict_null=self.strict_null)
+                project=self.session.check(path,options.root,sources=sources,strict_null=options.strict_null,libraries=options.libraries,positions=True)
                 self.projects[uri] = project
+                from .lint import lint_project
+                for warning in lint_project(project):
+                    filename=Path(warning.file).resolve()
+                    target=next((u for u in self.documents if path_from_uri(u)==filename),filename.as_uri())
+                    text=sources.get(filename,project.modules[filename].source_text)
+                    start=position(text,warning.line,warning.column)
+                    item={'range':{'start':start,'end':dict(start,character=start['character']+1)},'severity':2,'source':'gs-lint','code':warning.code,'message':warning.message}
+                    if item not in diagnostics.setdefault(target,[]):diagnostics[target].append(item)
             except (CompileError, OSError, UnicodeError, ValueError) as error:
+                project=project or self.session.last_project
+                if project and path in project.modules and project.modules[path].checker:self.partial_projects[uri]=project
                 filename = Path(getattr(error,'filename',None) or path).resolve()
                 target = next((open_uri for open_uri in self.documents if path_from_uri(open_uri)==filename),filename.as_uri())
                 text = sources.get(filename, '')
@@ -104,8 +122,8 @@ class Server:
             folders = params.get('workspaceFolders') or []
             if not folders and params.get('rootUri'):folders=[{'uri':params['rootUri']}]
             self.roots = [path_from_uri(f['uri']) for f in folders]
-            self.strict_null = bool((params.get('initializationOptions') or {}).get('strictNull',False))
-            return {'capabilities':{'positionEncoding':'utf-16','textDocumentSync':{'openClose':True,'change':1,'save':{'includeText':True}},'hoverProvider':True,'completionProvider':{'resolveProvider':False},'documentSymbolProvider':True},'serverInfo':{'name':'gs-lsp','version':__version__}}
+            self.strict_null = (params.get('initializationOptions') or {}).get('strictNull')
+            return {'capabilities':{'positionEncoding':'utf-16','textDocumentSync':{'openClose':True,'change':1,'save':{'includeText':True}},'hoverProvider':True,'completionProvider':{'resolveProvider':False,'triggerCharacters':['.']},'documentSymbolProvider':True,'definitionProvider':True,'referencesProvider':True,'renameProvider':{'prepareProvider':True},'signatureHelpProvider':{'triggerCharacters':['(',',']},'documentFormattingProvider':True},'serverInfo':{'name':'gs-lsp','version':__version__}}
         if method == 'shutdown':
             self.stopped = True
             return None
@@ -128,36 +146,9 @@ class Server:
         elif method == 'textDocument/didClose':
             uri = params['textDocument']['uri'];self.documents.pop(uri,None);self.validate()
         elif method == 'workspace/didChangeWatchedFiles':self.validate()
-        elif method in ('textDocument/hover','textDocument/completion','textDocument/documentSymbol'):
-            uri = params['textDocument']['uri'];doc = self.documents.get(uri)
-            if not doc:return [] if method != 'textDocument/hover' else None
-            project = self.projects.get(uri)
-            module = project.modules[path_from_uri(uri)] if project else None
-            if method == 'textDocument/completion':
-                items = [{'label':word,'kind':14} for word in KEYWORDS]
-                if module:
-                    items += [{'label':name,'kind':6 if symbol.typ.kind=='function' else 6 if symbol.category=='function' else 5,'detail':str(symbol.typ)} for name,symbol in module.checker.scopes[0].items() if name not in KEYWORDS]
-                return {'isIncomplete':False,'items':items}
-            if method == 'textDocument/documentSymbol':
-                try:return declarations(module.program if module else parse_code(doc['text']),doc['text'])
-                except CompileError:return []
-            if not module:return None
-            cursor=params['position'];row=cursor['line']+1
-            tokens=[t for t in tokenize(doc['text']) if t.line==row and t.kind=='name']
-            for token in tokens:
-                start=position(doc['text'],row,token.column)
-                if start['character'] <= cursor['character'] < start['character']+len(token.text):
-                    # Use the checked expression at this source line, preserving local shadowing.
-                    matches=[]
-                    def visit(node):
-                        if node.kind=='name' and node.value==token.text and node.line==row:
-                            typ=module.checker.types.get(id(node))
-                            if typ is not None:matches.append(typ)
-                        for child in node.children:visit(child)
-                    visit(module.program)
-                    if matches and all(t==matches[0] for t in matches):
-                        return {'contents':{'kind':'plaintext','value':token.text+': '+str(matches[0])},'range':{'start':start,'end':dict(start,character=start['character']+len(token.text))}}
-            return None
+        elif method in ('textDocument/hover','textDocument/completion','textDocument/documentSymbol','textDocument/definition','textDocument/references','textDocument/prepareRename','textDocument/rename','textDocument/signatureHelp','textDocument/formatting'):
+            from .lsp_features import handle_feature
+            return handle_feature(self,method,params)
         elif method in ('initialized','$/cancelRequest','$/setTrace'):return None
         elif not method.startswith('$/'):raise LookupError(method)
         return None

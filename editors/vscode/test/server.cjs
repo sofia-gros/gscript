@@ -8,7 +8,7 @@ test('explicit executable and arguments survive spaces',()=>{
   assert.deepEqual(resolveServer(config({'server.path':'/with space/python','server.args':['/server with space.pyz','--stdio']}), root), {command:'/with space/python',args:['/server with space.pyz','--stdio']});
 });
 test('PATH native server version is checked',()=>{
-  assert.equal(resolveServer(config({}),root,()=> 'gs-lsp 0.4.0\n').command,'gs-lsp');
+  assert.equal(resolveServer(config({}),root,()=> 'gs-lsp 0.5.0\n').command,'gs-lsp');
 });
 test('missing native server uses bundled Python with separate argv',()=>{
   const calls=[];

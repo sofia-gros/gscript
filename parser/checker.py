@@ -115,6 +115,7 @@ def unwrap(node):
 
 class Checker:
     def __init__(self, module_id='', structs=None, exports=None, module_exports=None):
+        self.capture_info=False
         self.module_id = module_id
         self.structs = structs if structs is not None else {}
         self.type_names = {}
@@ -122,6 +123,7 @@ class Checker:
         self.module_exports = module_exports if module_exports is not None else {}
         self.prepared = set()
         self.scopes = [{}]
+        self.symbols = []
         self.return_type = None
         self.async_context = True
         self.loop_depth = 0
@@ -166,6 +168,16 @@ class Checker:
                 if emitted not in self.used_names:
                     self.used_names.add(emitted)
                     break
+        if self.capture_info:
+            symbol.node=node
+            symbol.original_name=name
+            symbol.module_id=self.module_id
+            symbol.definition_span=getattr(node,'binding_spans',{}).get(name,getattr(node.children[0],'name_span',None) if node.kind=='assign' and node.children else None)
+            symbol.references={}
+            symbol.scope_depth=len(self.scopes)-1
+            symbol.definition_scope=self.scopes[-1]
+            if category in ('function','struct') and hasattr(node,'declaration_span'):symbol.definition_span=node.declaration_span
+            self.symbols.append(symbol)
         symbol.js_name = emitted
         if not hasattr(node, 'bindings'):
             node.bindings = {}
@@ -177,9 +189,20 @@ class Checker:
     def lookup(self, node, name):
         for scope in reversed(self.scopes):
             if name in scope:
-                return scope[name]
+                symbol=scope[name]
+                if self.capture_info and node.kind=='name' and node.value==name:
+                    node.symbol=symbol
+                    if hasattr(symbol,'references'):symbol.references[id(node)]=node
+                return symbol
         if name in REGISTRY:
             return Symbol(Type('builtin',name),True,'builtin')
+        reader=getattr(self,'declarations',None)
+        if reader and reader.project.libraries:
+            info=reader.query(action='global_type',file=self.module_id+'.declarations.mts',name=name)
+            if info:
+                node.external_definition=info.get('definition',[])
+                node.deprecated=info.get('deprecated',False)
+                return Symbol(reader.typ(info['value']),True,'global')
         if name in GLOBALS:
             return Symbol(ANY, True, 'global')
         self.fail(node, f'undefined name: {name}')
@@ -226,6 +249,7 @@ class Checker:
         if name in primitive:
             return primitive[name]
         if name in self.type_names:
+            if name in self.scopes[0]:self.scopes[0][name].type_used=True
             return Type('struct', self.type_names[name])
         root = name.split('.')[0]
         for scope in reversed(self.scopes):
@@ -284,6 +308,9 @@ class Checker:
                 if key in self.structs:
                     self.fail(n, f'duplicate struct: {name}')
                 self.structs[key] = Struct()
+                self.structs[key].node=n
+                self.structs[key].checker=self
+                self.structs[key].method_nodes={}
                 self.type_names[name] = key
                 self.bind(n, name, Type('constructor', key), True, 'struct')
 
@@ -304,6 +331,7 @@ class Checker:
                     if name in target.methods or name == 'constructor':
                         self.fail(n, f'duplicate or reserved method: {name}')
                     target.methods[name] = sig
+                    target.method_nodes[name]=n
                 else:
                     self.bind(n, name, sig, True, 'function')
             elif n.kind == 'import':
@@ -396,6 +424,8 @@ class Checker:
             k, c = node.kind, node.children
             if k in ('return', 'throw', 'break', 'continue'):
                 exits = {k}
+            elif k == 'expr' and c and getattr(c[0], 'builtin_call', None)=='panic':
+                exits = {'throw'}
             elif k == 'if':
                 exits = self.exits(c[1]) | (self.exits(c[2]) if c[2] is not None else {'normal'})
             elif k == 'try':
@@ -416,6 +446,9 @@ class Checker:
         return 'normal' not in self.exits(nodes)
 
     def expr(self, n):
+        if self.capture_info:
+            n.lexical_scopes=tuple(self.scopes)
+            n.owner_class=getattr(self,'current_class',None)
         typ = self.expression(n)
         self.types[id(n)] = typ
         return typ
@@ -440,8 +473,13 @@ class Checker:
         if base.kind == 'struct':
             struct = self.structs[base.name]
             if key in struct.fields:
+                n.member_key=(base.name,False,key)
+                n.member_definition=(struct.checker.module_id,getattr(struct.node,'field_spans',{}).get(key))
                 return struct.fields[key]
             if key in struct.methods:
+                n.member_key=(base.name,False,key)
+                method=struct.method_nodes[key]
+                n.member_definition=(struct.checker.module_id,getattr(method,'declaration_span',getattr(method,'binding_spans',{}).get(key)))
                 return struct.methods[key]
             self.fail(n, f'unknown field or method {key} on {base.name}')
         if base.kind == 'array':
@@ -489,6 +527,7 @@ class Checker:
                 self.fail(n, f'module value used before initialization: {v}')
             n.resolved_name = symbol.js_name or v
             n.builtin = v if symbol.category=='builtin' else None
+            if getattr(symbol,'deprecated',False):n.deprecated=True
             return symbol.typ
         if k == 'array':
             element = self.declared_type(n, v)
@@ -513,6 +552,7 @@ class Checker:
                     self.fail(n, f'unknown struct: {v}')
                 if symbol.typ.kind != 'constructor':
                     self.fail(n, f'unknown struct: {v}')
+                n.constructor_symbol=symbol
                 n.constructor_name = symbol.js_name or v
                 struct_key = symbol.typ.name
                 target = self.structs[struct_key].fields
@@ -575,7 +615,7 @@ class Checker:
             if v in ('<', '>', '<=', '>='):
                 if (not is_dynamic(lt) and not numeric(lt) and lt != STRING) or (not is_dynamic(rt) and not numeric(rt) and rt != STRING):
                     self.fail(n, f'operator {v} requires numbers or strings')
-                self.check(n, lt, rt)
+                if not (numeric(lt) and numeric(rt) and NUMBER in (lt,rt)):self.check(n, lt, rt)
                 return BOOL
             if v == '+' and lt == rt == STRING:
                 return STRING
@@ -583,8 +623,8 @@ class Checker:
                 return EXTERNAL
             if (not is_dynamic(lt) and not numeric(lt)) or (not is_dynamic(rt) and not numeric(rt)):
                 self.fail(n, f'operator {v} requires matching numeric operands (or strings for +)')
-            if not is_dynamic(lt) and not is_dynamic(rt):self.check(n,lt,rt)
-            return EXTERNAL if is_external(lt) or is_external(rt) else ANY if ANY in (lt, rt) else FLOAT if v=='/' and lt==INT else lt
+            if not is_dynamic(lt) and not is_dynamic(rt) and not (numeric(lt) and numeric(rt) and NUMBER in (lt,rt)):self.check(n,lt,rt)
+            return EXTERNAL if is_external(lt) or is_external(rt) else ANY if ANY in (lt, rt) else NUMBER if NUMBER in (lt,rt) else FLOAT if v=='/' and lt==INT else lt
         if k == 'unary':
             typ = self.expr(c[0])
             if v == 'await':
@@ -601,6 +641,7 @@ class Checker:
         if k == 'new':
             names = v.split('.')
             constructor_symbol = self.lookup(n, names[0])
+            n.constructor_symbol=constructor_symbol
             n.constructor_name = '.'.join([constructor_symbol.js_name or names[0], *names[1:]])
             constructor = constructor_symbol.typ
             for name in names[1:]:
@@ -697,6 +738,7 @@ class Checker:
         return {'filter': array(element), 'find': ANY, 'some': BOOL, 'every': BOOL, 'forEach': VOID}[method.name]
 
     def assignable(self, node):
+        if node.kind.startswith('optional_') or getattr(node,'optional_chain',False):self.fail(node,'optional chaining cannot be an assignment target')
         if node.kind == 'name':
             symbol = self.lookup(node, node.value)
             if symbol.constant:
@@ -715,6 +757,7 @@ class Checker:
         return self.expr(node)
 
     def statement(self, n):
+        if self.capture_info:n.lexical_scopes=tuple(self.scopes)
         k, v, c = n.kind, n.value, n.children
         if k == 'default':
             self.exports['default'].typ = self.expr(c[0])
@@ -737,6 +780,7 @@ class Checker:
                 self.bind(n, c[0].value, actual)
                 self.types[id(n)] = actual
             else:
+                c[0].write_only=v=='='
                 expected = self.assignable(c[0])
                 self.check(n, expected, actual)
                 if v in ('+=', '-=') and not is_dynamic(expected) and not numeric(expected) and not (v == '+=' and expected == STRING):

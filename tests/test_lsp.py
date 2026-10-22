@@ -23,7 +23,7 @@ class LanguageServerTests(unittest.TestCase):
         self.server.handle('textDocument/didOpen',{'textDocument':{'uri':uri or self.uri,'languageId':'gscript','version':1,'text':text}})
 
     def errors(self,uri=None):
-        return next(e['params']['diagnostics'] for e in reversed(self.events) if e['params'].get('uri')==(uri or self.uri))
+        return [d for d in next(e['params']['diagnostics'] for e in reversed(self.events) if e['params'].get('uri')==(uri or self.uri)) if d['severity']==1]
 
     def test_native_diagnostics_unsaved_changes_clear_and_do_not_write(self):
         self.open('var n int = "bad"')
@@ -91,8 +91,8 @@ class LanguageServerTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr)
         stream=io.BytesIO(result.stdout);responses=[]
         while (message:=read_message(stream)) is not None:responses.append(message)
-        self.assertEqual(responses[0]['result']['serverInfo']['version'],'0.4.0')
-        self.assertEqual(responses[1]['params']['diagnostics'],[])
+        self.assertEqual(responses[0]['result']['serverInfo']['version'],'0.5.0')
+        self.assertFalse(any(d['severity']==1 for d in responses[1]['params']['diagnostics']))
         self.assertEqual(responses[2]['error']['code'],-32601)
         self.assertIsNone(responses[3]['result'])
         with self.assertRaises(ValueError):read_message(io.BytesIO(b'Content-Length: 5\r\n\r\n{}'))

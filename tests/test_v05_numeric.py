@@ -46,3 +46,9 @@ class NumericAndBuiltinTests(unittest.TestCase):
         compile_source('var n number = 1\nvar f number = 1.5')
         for source in ('var n number = 1\nvar i int = n','var n number = 1.0\nvar f float = n'):
             with self.assertRaises(CompileError):compile_source(source)
+
+    def test_typeof_keeps_numeric_subtypes_and_panic_terminates(self):
+        compile_source('func f(x int|string) int { if typeof x == "number" { return x+1 }; return 0 }')
+        compile_source('func stop() int { panic("stop") }')
+        with self.assertRaises(CompileError):compile_source('x := []int{1}\nvar y int = x.pop()')
+        with self.assertRaises(CompileError):compile_source('var x any = nil\nx?.y = 1')

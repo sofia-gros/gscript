@@ -1,33 +1,13 @@
 # GS / gscript for VSCode
 
-Go風の構文からJavaScriptを生成するGSの言語サポートです。
+[Plugin v0.5.0](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.5.0)のgscript-v0.5.0.vsixを取得し、VSCode 1.85以降で「VSIXからのインストール」を選びます。
 
-## インストール（修正版r2）
-
-1. [Python 3.12以降](https://www.python.org/downloads/)をインストールし、VSCodeを再起動します。
-2. [Plugin v0.4.0 修正版r2](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.4.0-r2)から`gscript-v0.4.0.vsix`を取得します。
-3. 拡張機能ビューの「…」→「VSIXからのインストール…」で選び、「Developer: Reload Window」を実行します。
-4. プロジェクトのフォルダーを開き、`.gs`または`.gos`を開きます。
-
-言語サーバーはVSIXに同梱しています。PATHに`gs-lsp 0.4.0`がある場合はネイティブ版を使い、なければPython 3.12以降で同梱サーバーを起動します。ネイティブ版があればPythonは不要です。
-
-初版からの更新は同じ言語バージョンのため、CLIでは`code --install-extension ./gscript-v0.4.0.vsix --force`を使います。
-
-## 動作確認
-
-```go
-var value int = "wrong"
-console.log(value)
+```sh
+code --install-extension ./gscript-v0.5.0.vsix
 ```
 
-型不一致が表示され、`"wrong"`を`3`へ修正すると未保存でも診断が消えます。2行目の`value`へマウスを重ねると型が表示されます。
+Python 3.12以降で同梱LSPを起動します。PATHにネイティブgs-lsp 0.5.0があればPythonは不要です。設定で実行ファイルの絶対パスも指定できます。
 
-## 起動に失敗した場合
+診断・ホバー・定義・参照・リネーム・補完・Signature Help・整形に対応します。gscript.strictNullはnullでgsconfig.jsonへ追従します。
 
-「表示」→「出力」→`GS Language Server`で詳細を確認します。Pythonが見つからない場合は、Python 3.12以降を導入してVSCodeを再起動してください。独自の実行ファイルは`gscript.server.path`で指定できます。パスは絶対パスを使い、設定変更後は再読み込みします。
-
-GSの構文・型検査はGSコンパイラ自身が行います。外部JS/TSの型情報にはNode.js 22/24とプロジェクト内のTypeScript 5.9.3を使います。
-
-シンタックスハイライト、診断、型ホバー、キーワード・トップレベルシンボル補完、アウトラインに対応します。ローカル変数・メンバー補完、定義ジャンプ、リネーム、整形は未提供です。
-
-[OS別設定・詳しいエラー対処](https://github.com/sofia-gros/gscript/blob/main/docs/editors.md)
+起動エラーは「出力」→「GS Language Server」で確認してください。[OS別導入・設定・対処](https://github.com/sofia-gros/gscript/blob/main/docs/editors.md)。

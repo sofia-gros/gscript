@@ -238,6 +238,10 @@
     "named": false
   },
   {
+    "type": "catch",
+    "named": false
+  },
+  {
     "type": "comment",
     "named": true,
     "extra": true
@@ -287,6 +291,10 @@
     "named": false
   },
   {
+    "type": "float64",
+    "named": false
+  },
+  {
     "type": "for",
     "named": false
   },
@@ -315,11 +323,19 @@
     "named": false
   },
   {
+    "type": "instanceof",
+    "named": false
+  },
+  {
     "type": "int",
     "named": false
   },
   {
     "type": "interface",
+    "named": false
+  },
+  {
+    "type": "never",
     "named": false
   },
   {
@@ -332,11 +348,11 @@
   },
   {
     "type": "number",
-    "named": true
+    "named": false
   },
   {
     "type": "number",
-    "named": false
+    "named": true
   },
   {
     "type": "operator",
@@ -395,7 +411,15 @@
     "named": false
   },
   {
+    "type": "throw",
+    "named": false
+  },
+  {
     "type": "true",
+    "named": false
+  },
+  {
+    "type": "try",
     "named": false
   },
   {
@@ -403,7 +427,15 @@
     "named": false
   },
   {
+    "type": "typeof",
+    "named": false
+  },
+  {
     "type": "undefined",
+    "named": false
+  },
+  {
+    "type": "unknown",
     "named": false
   },
   {

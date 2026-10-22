@@ -41,7 +41,12 @@ class Module:
 
 
 class Project:
-    def __init__(self, entry, root=None, format='mjs', cache=True, cache_dir=None, typescript=None, strict_null=False, sources=None):
+    def __init__(self, entry, root=None, format='mjs', cache=True, cache_dir=None, typescript=None, strict_null=False, sources=None, libraries=None, prepare_output=True, parse_cache=None, positions=False, analysis_info=False):
+        self.libraries=libraries or []
+        self.prepare_output=prepare_output
+        self.parse_cache=parse_cache
+        self.positions=positions
+        self.analysis_info=analysis_info or positions
         self.sources = {Path(path).resolve(): text for path, text in (sources or {}).items()}
         self.strict_null = strict_null
         self.format = format
@@ -54,7 +59,7 @@ class Project:
         self.modules = {}
         self.order = []
         self._load(self.entry)
-        self.extended = strict_null or self.has_external or any(getattr(m.program, "extended", False) for m in self.modules.values())
+        self.extended = strict_null or bool(self.libraries) or self.has_external or any(getattr(m.program, "extended", False) for m in self.modules.values())
 
     def _located(self, source, action):
         try:
@@ -82,7 +87,7 @@ class Project:
                 continue
             def load():
                 text = self.sources[current] if current in self.sources else current.read_text(encoding='utf-8')
-                program = parse_code(text)
+                program = self.parse_cache.parse(current,text,positions=self.positions) if self.parse_cache else parse_code(text,positions=self.positions)
                 module = Module(current, program, source_text=text)
                 self.modules[current] = module
                 dependencies = []
@@ -122,7 +127,7 @@ class Project:
             if getattr(self,"declarations",None): self.declarations.close()
 
     def _check(self):
-        if self.extended and self.has_external:
+        if self.extended and (self.has_external or self.libraries):
             from .declarations import Declarations
             self.declarations = Declarations(self)
         structs = {}
@@ -135,6 +140,7 @@ class Project:
                 checker = module.checker = ExtendedChecker(str(module.source), structs, module.exports, exports, strict_null=self.strict_null)
             else:
                 checker = module.checker = Checker(str(module.source), structs, module.exports, exports)
+            checker.capture_info=self.analysis_info
             if self.extended:
                 checker.declarations = getattr(self,"declarations",None)
                 checker.defer_validation = True
@@ -183,8 +189,10 @@ class Project:
                     self._located(module.source, lambda: checker.check_function(node))
                 finally:
                     checker.scopes = old_scopes
-        if self.has_external:
+        if self.has_external and self.prepare_output:
             self._external_result(self.format)
+        elif getattr(self,'declarations',None):
+            self.interop_stats={'cache_hit':self.declarations.process is None}
         return self
 
     def _external_result(self, format):
@@ -213,6 +221,9 @@ class Project:
                             if not hasattr(checker,'type_only_names'):checker.type_only_names=set()
                             checker.type_only_names.add(local)
                     checker.bind(node, local, typ, True, 'external')
+                    info=self.declarations.query(action='resolve',file=str(module.source)+'.declarations.mts',name=local)
+                    checker.scopes[0][local].external_definition=info.get('definition',[])
+                    checker.scopes[0][local].deprecated=info.get('deprecated',False)
                 continue
             checker.prepared.add(id(node))
             binding = node.value[0]
@@ -241,7 +252,7 @@ class Project:
                         checker.fail(node, f'reserved type name: {local}')
                     checker.type_names[local] = target[exported].typ.name
 
-    def emit(self, module, format='mjs', out_dir=None, checking=False, runtime_format=None):
+    def emit(self, module, format='mjs', out_dir=None, checking=False, runtime_format=None, mapping=False):
         if self.has_external and not checking and runtime_format is None:
             result = self._external_result(format)
             generated = result.get('gsFiles', {}).get(str(module.source))
@@ -266,8 +277,8 @@ class Project:
                 node.value = (binding, json.dumps(specifier if specifier.startswith('.') else './' + specifier))
             if self.extended:
                 from parser.extended_emitter import ExtendedEmitter
-                return ExtendedEmitter(format=format, checker=module.checker, checking=checking).compile(module.program)
-            return Emitter(format=format, checker=module.checker, checking=checking).compile(module.program)
+                return ExtendedEmitter(format=format, checker=module.checker, checking=checking, mapping=mapping).compile(module.program)
+            return Emitter(format=format, checker=module.checker, checking=checking, mapping=mapping).compile(module.program)
         finally:
             for node, value in original_values:
                 node.value = value
@@ -293,6 +304,14 @@ def build_project(entry, out_dir, root=None, format='mjs', check_only=False, cac
     project = Project(entry, root, format, cache, cache_dir, typescript, strict_null).check()
     if check_only:
         return None
+    outputs = plan_outputs(project, out_dir, format)
+    for output, contents in outputs.items():
+        write_output(output, contents)
+    return Path(out_dir).resolve() / project.entry.relative_to(project.root).with_suffix('.' + format)
+
+
+def plan_outputs(project, out_dir, format='mjs'):
+    """Plan every file and validate collisions before committing any build output."""
     out_dir = Path(out_dir).resolve()
     outputs = {}
     for module in project.modules.values():
@@ -331,6 +350,4 @@ def build_project(entry, out_dir, root=None, format='mjs', check_only=False, cac
         marker = module_marker(out_dir)
         if marker:
             outputs[marker] = '{"type":"module"}\n'
-    for output, contents in outputs.items():
-        write_output(output, contents)
-    return out_dir / project.entry.relative_to(project.root).with_suffix('.' + format)
+    return outputs

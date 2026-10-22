@@ -1,0 +1,11 @@
+'use strict';
+const fs=require('node:fs');
+const request=JSON.parse(fs.readFileSync(0,'utf8'));
+const ts=require(request.api);
+const config=ts.readConfigFile(request.config,ts.sys.readFile);
+const parsed=ts.parseJsonConfigFileContent(config.config,ts.sys,require('node:path').dirname(request.config));
+const program=ts.createProgram(parsed.fileNames,parsed.options);
+const errors=[...(config.error?[config.error]:[]),...parsed.errors,...ts.getPreEmitDiagnostics(program)];
+const diagnostics=errors.map(d=>{const pos=d.file?.getLineAndCharacterOfPosition(d.start??0);return {file:d.file?.fileName,line:pos?pos.line+1:null,column:pos?pos.character+1:null,code:d.code,message:ts.flattenDiagnosticMessageText(d.messageText,'\n')};});
+if(!diagnostics.length)program.emit();
+process.stdout.write(JSON.stringify({diagnostics,version:ts.version}));

@@ -1,8 +1,8 @@
 {
   "name": "gscript",
   "displayName": "GS / gscript",
-  "description": "GS language support with native compiler diagnostics, hover, completion and outline.",
-  "version": "0.4.0",
+  "description": "GS compiler diagnostics, completion, definition, references, rename, signatures and formatting.",
+  "version": "0.5.0",
   "publisher": "sofia-gros",
   "engines": {
     "vscode": "^1.85.0"
@@ -59,7 +59,7 @@
         "gscript.server.path": {
           "type": "string",
           "default": "",
-          "description": "Optional native server or Python executable path. Empty: detect gs-lsp 0.4.0, otherwise run the bundled server with Python 3.12+."
+          "description": "Optional native server or Python executable path. Empty: detect gs-lsp 0.5.0, otherwise run the bundled server with Python 3.12+."
         },
         "gscript.server.args": {
           "type": "array",
@@ -72,9 +72,12 @@
           "description": "Language server arguments. Reload the window after changing server settings."
         },
         "gscript.strictNull": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable the compiler's strict null checks. Reload the window after changing."
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Override strict null checks. Null uses gsconfig.json. Reload after changing."
         }
       }
     }

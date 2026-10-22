@@ -22,7 +22,8 @@ def zero(typ):
 
 
 class Emitter:
-    def __init__(self, format='mjs', checker=None, checking=False):
+    def __init__(self, format='mjs', checker=None, checking=False, mapping=False):
+        self.mapping=mapping
         self.checking = checking
         self.helpers = []
         self.format = format
@@ -118,6 +119,9 @@ class Emitter:
             return '(' + code + ' as any)'
         if self.checking and node.kind != 'spread':
             return f'(/*__GS_LINE_{node.line}__*/ {code})'
+        if self.mapping:
+            span=getattr(node,'name_span',getattr(node,'span',(node.line,1,node.line,1)))
+            return f'/*__GS_POS_{span[0]}_{span[1]}__*/'+code
         return code
 
     def precedence(self,node):
@@ -241,6 +245,9 @@ class Emitter:
     def statement(self, node):
         code = self.statement_code(node)
         if getattr(node,'leading_comments',None):code='\n'.join(node.leading_comments)+'\n'+code
+        if self.mapping and code:
+            span=getattr(node,'span',(node.line,1,node.line,1))
+            code=f'/*__GS_POS_{span[0]}_{span[1]}__*/'+code
         return f'/*__GS_LINE_{node.line}__*/\n' + code if self.checking and code else code
 
     def statement_code(self, node):

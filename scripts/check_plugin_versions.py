@@ -16,7 +16,7 @@ def main():
         assert actual==__version__,(file,actual,__version__)
     assert json.loads((ROOT/'editors/vscode/package.json').read_text())['version']==__version__
     assert json.loads((ROOT/'editors/tree-sitter-gs/tree-sitter.json').read_text())['metadata']['version']==__version__
-    if len(sys.argv)>1:assert sys.argv[1] in ('plugin-v'+__version__, 'plugin-v'+__version__+'-r2'),sys.argv[1]
+    if len(sys.argv)>1:assert sys.argv[1] == 'plugin-v'+__version__,sys.argv[1]
     print('Compiler, language server, VSCode, Zed and grammar versions verified:',__version__)
 
 

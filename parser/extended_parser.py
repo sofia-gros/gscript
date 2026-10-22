@@ -84,16 +84,24 @@ class ExtendedParser(Parser):
         line = self.token.line
         self.take('func')
         receiver = None
+        binding_spans={}
         if not anonymous and self.accept('('):
+            token=self.token
             receiver = (self.name(), self.type_name())
+            binding_spans[receiver[0]]=(token.line,token.column,token.line,token.column+len(receiver[0]))
             self.take(')')
+        token=self.token
         name = None if anonymous else self.name()
+        declaration_span=(token.line,token.column,token.line,token.column+len(name)) if name else None
         if name == 'constructor': self.extended = True
         generic = self.type_params()
         params = self.params()
+        binding_spans.update(self.parameter_spans)
         typ = self.type_name() if not self.at('{') else None
         node = Node('lambda' if anonymous else 'func', (name, params, typ, asynchronous, receiver), self.block(), line)
         node.type_params = generic
+        node.binding_spans=binding_spans
+        node.declaration_span=declaration_span
         return node
 
     def statement(self):
@@ -110,7 +118,9 @@ class ExtendedParser(Parser):
             return node
         if self.at('type'):
             self.take()
+            definition_token=self.token
             name = self.name()
+            field_spans={}
             generic = self.type_params()
             if self.accept('='):
                 self.extended = True
@@ -121,7 +131,9 @@ class ExtendedParser(Parser):
                 members = []
                 self.separators()
                 while not self.at('}'):
+                    token=self.token
                     member = self.name()
+                    field_spans[member]=(token.line,token.column,token.line,token.column+len(member))
                     value = self.expression() if self.accept('=') else None
                     members.append((member, value))
                     if not self.at('}') and not self.accept(',') and not self.accept(';'): self.fail('expected enum member separator')
@@ -138,7 +150,9 @@ class ExtendedParser(Parser):
                 members = []
                 self.separators()
                 while not self.at('}'):
+                    token=self.token
                     member = self.name()
+                    field_spans[member]=(token.line,token.column,token.line,token.column+len(member))
                     if self.at('('):
                         params = self.params()
                         typ = self.type_name() if not self.at(';') and not self.at('}') else 'void'
@@ -168,7 +182,9 @@ class ExtendedParser(Parser):
                         self.extended = True
                         mods.append(self.take())
                     self.validate_modifiers(mods)
+                    token=self.token
                     field = self.name()
+                    field_spans[field]=(token.line,token.column,token.line,token.column+len(field))
                     typ = self.type_name()
                     default = self.expression() if self.accept('=') else None
                     if field in field_mods: self.fail('duplicate field: ' + field)
@@ -180,6 +196,9 @@ class ExtendedParser(Parser):
                 node = Node('struct', (name, fields), line=line)
                 node.base, node.implements, node.field_mods = base, interfaces, field_mods
             node.type_params = generic
+            node.field_spans=field_spans
+            node.binding_spans={name:(definition_token.line,definition_token.column,definition_token.line,definition_token.column+len(name))}
+            node.declaration_span=node.binding_spans[name]
             return node
         if self.accept('switch'):
             self.extended = True
@@ -230,7 +249,10 @@ class ExtendedParser(Parser):
                 elif self.accept('['):
                     index = self.expression(); self.take(']')
                     left = Node('optional_index', children=[left, index], line=line)
-                else: left = Node('optional_member', self.name(), [left], line)
+                else:
+                    token=self.token
+                    left = Node('optional_member', self.name(), [left], token.line)
+                    left.name_span=(token.line,token.column,token.line,token.column+len(token.text))
             elif self.at('<'):
                 checkpoint, was_extended = self.i, self.extended
                 try:

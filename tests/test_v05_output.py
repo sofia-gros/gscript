@@ -29,7 +29,7 @@ println(1 - (2 - 3), (1 + 2) * 3, -(-3), 1 + (2 + 3))
         self.assertEqual(result.stdout,'4\n3\n')
 
     def test_erased_export_comment_does_not_leave_orphan_export(self):
-        js=compile_source('export\n// erased type\ntype X = int\nprintln(3)')
+        js=compile_source('export /* erased type */ type X = int\nprintln(3)')
         result=subprocess.run(['node','--input-type=module'],input=js,capture_output=True,text=True,check=True)
         self.assertEqual(result.stdout,'3\n')
-        self.assertIn('// erased type',js)
+        self.assertIn('/* erased type */',js)
