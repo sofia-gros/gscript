@@ -52,3 +52,7 @@ class NumericAndBuiltinTests(unittest.TestCase):
         compile_source('func stop() int { panic("stop") }')
         with self.assertRaises(CompileError):compile_source('x := []int{1}\nvar y int = x.pop()')
         with self.assertRaises(CompileError):compile_source('var x any = nil\nx?.y = 1')
+
+    def test_array_pop_guard_narrows_without_extra_options(self):
+        source='xs := []int{1}\nx := xs.pop()\nif x != undefined { println(x+1) }'
+        for strict in (False,True):compile_source(source,strict_null=strict)

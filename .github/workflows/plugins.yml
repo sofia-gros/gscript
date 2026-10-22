@@ -19,7 +19,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: python scripts/ci_command.py python -m unittest discover -s tests -v
       - run: python scripts/check_plugin_versions.py "${{ github.ref_name }}"
-      - run: npm ci --prefix editors/vscode
+      - run: python scripts/ci_command.py npm ci --prefix editors/vscode
       - run: npm run package --prefix editors/vscode
       - run: node --test editors/vscode/test/server.cjs
       - name: Test installed VSIX with bundled server

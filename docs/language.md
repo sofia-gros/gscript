@@ -72,7 +72,7 @@ python -m unittest discover -s tests -v
 python -m gscript examples/main.gos -o build/main.mjs
 node build/main.mjs
 python -m gscript examples/modules/main.gos --out-dir build/modules
-node build/modules/main.mjs
+node build/modules/main.js
 ```
 
 テストは文字列の出力比較だけでなく、Node.js で生成したコードを実行し、型・構文・スコープの不正なプログラムを拒否することを検査します。CLI、複数モジュール、循環 import、失敗時の出力保持も検査します。

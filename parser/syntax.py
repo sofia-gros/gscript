@@ -580,7 +580,7 @@ def parse_code(source, positions=False):
             program.tokens=tuple(parser.tokens)
             program.source_text=source
         program.position_info=positions
-        program.extended = parser.extended
+        program.extended = parser.extended or "undefined" in parser.tokens.identifiers
         program.identifiers = frozenset(parser.tokens.identifiers)
         return program
     except RecursionError as error:
