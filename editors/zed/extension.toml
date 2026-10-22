@@ -15,5 +15,5 @@ GS = "gscript"
 
 [grammars.gs]
 repository = "https://github.com/sofia-gros/gscript"
-rev = "bf9b33d59ea526817dfe508fd515c1b43ff599eb"
+rev = "a67b753d765517e2cc77778741379717b4178718"
 path = "editors/tree-sitter-gs"
