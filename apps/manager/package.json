@@ -1,0 +1,1 @@
+{"name":"gscript-manager-design","private":true,"type":"module","scripts":{"docs:bundle":"node scripts/bundle-docs.mjs"},"devDependencies":{"highlight.js":"11.11.1","marked":"17.0.5"}}

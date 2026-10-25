@@ -6,7 +6,7 @@
 
 Go風の構文と独自の型検査を備えた、2つの実行経路を持つ言語。
 
-[言語ガイド](docs/language-v0.5.md) · [JS / TS](docs/cli.md) · [ネイティブ](docs/native.md) · [ライブラリ互換性](docs/library-compatibility.md) · [エディター](docs/editors.md)
+[言語ドキュメント](docs/guide/README.md) · [JS / TS](docs/cli.md) · [ネイティブ](docs/native.md) · [ライブラリ互換性](docs/library-compatibility.md) · [エディター](docs/editors.md)
 
 [![Tests](https://github.com/sofia-gros/gscript/actions/workflows/test.yml/badge.svg)](https://github.com/sofia-gros/gscript/actions/workflows/test.yml)
 
@@ -111,16 +111,31 @@ gs watch
 
 [VSCode・Zed・LSP v0.6.0](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.6.0)では、ハイライト、診断、定義・参照、リネーム、補完、Signature Help、整形を提供します。エディターは`gsconfig.json`の`backend`を共用し、ネイティブ構文の診断・基本的な編集機能にも対応します。lint/fmt/watchのCLIはJS / TS用です。[Nativeのエディター設定](docs/native.md#エディター設定)を参照してください。
 
+## 管理アプリ
+
+GPUI + gpui-componentのネイティブGUIから、コンパイラ・拡張・ツールチェーンの導入と更新、同梱言語ドキュメントの閲覧を行います。
+
+```sh
+cargo run --locked --manifest-path apps/manager/native/Cargo.toml
+```
+
+[ビルド環境・導入先・PATH設定・現在の対応範囲](apps/manager/native/README.md)。画面と実機での導入動作は最終確認前です。
+
 ## ドキュメント
 
-| 目的 | ガイド |
+[GScript言語ドキュメント](docs/guide/README.md)は、言語の動作とコードの書き方を説明します。
+
+| 内容 | 参照 |
 | --- | --- |
-| 全体構成を理解する | [実行モデル](docs/execution-models.md) |
-| JSコンパイラを導入する | [インストール](docs/installation.md)・[CLI](docs/cli.md) |
-| ネイティブ実行・FFI・ライブラリを作る | [Native](docs/native.md) |
-| Node/npmとC ABIの対応範囲を確認する | [ライブラリ互換性](docs/library-compatibility.md) |
-| 型・生成物を理解する | [言語](docs/language-v0.5.md)・[数値](docs/numeric-types.md)・[Source Map](docs/source-maps.md)・[型宣言](docs/declarations.md) |
-| 更新・検証 | [v0.4→v0.5](docs/migration-v0.4-to-v0.5.md)・[性能](docs/performance.md)・[エディター](docs/editors.md) |
+| どう動く言語か | [実行モデル](docs/guide/execution.md) |
+| 基本型・変数・値・演算 | [基本](docs/guide/variables.md) |
+| 関数・制御文・配列・例外・非同期 | [文と式](docs/guide/syntax-reference.md) |
+| struct・継承・interface・Generics・enum | [型とオブジェクト](docs/guide/structs.md) |
+| GS・JS・TS・npmの連携 | [モジュールと外部ライブラリ](docs/guide/javascript.md) |
+| 機械語実行・メモリ・C ABI・Win32 | [ネイティブ言語仕様](docs/guide/native-types.md) |
+| Go・JavaScriptとどう違うか | [3言語の書き方と意味の比較](docs/guide/comparison.md) |
+
+導入・操作は[コンパイラのインストール](docs/installation.md)、[CLI](docs/cli.md)、[VSCode / Zed](docs/editors.md)を参照してください。
 
 ## 開発と検証
 

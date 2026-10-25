@@ -1,0 +1,127 @@
+[
+  {
+    "id": "introduction.md",
+    "title": "GScriptとは",
+    "group": "はじめに"
+  },
+  {
+    "id": "quick-start.md",
+    "title": "はじめのプログラム",
+    "group": "はじめに"
+  },
+  {
+    "id": "execution.md",
+    "title": "コンパイルと実行",
+    "group": "はじめに"
+  },
+  {
+    "id": "variables.md",
+    "title": "変数と値",
+    "group": "基本"
+  },
+  {
+    "id": "numbers.md",
+    "title": "数値と演算",
+    "group": "基本"
+  },
+  {
+    "id": "functions.md",
+    "title": "関数",
+    "group": "基本"
+  },
+  {
+    "id": "control-flow.md",
+    "title": "条件分岐とループ",
+    "group": "基本"
+  },
+  {
+    "id": "collections.md",
+    "title": "配列とオブジェクト",
+    "group": "基本"
+  },
+  {
+    "id": "async-errors.md",
+    "title": "非同期処理と例外",
+    "group": "基本"
+  },
+  {
+    "id": "type-system.md",
+    "title": "型の基本",
+    "group": "型とオブジェクト"
+  },
+  {
+    "id": "structs.md",
+    "title": "structとメソッド",
+    "group": "型とオブジェクト"
+  },
+  {
+    "id": "inheritance.md",
+    "title": "継承と初期化",
+    "group": "型とオブジェクト"
+  },
+  {
+    "id": "interfaces.md",
+    "title": "interface",
+    "group": "型とオブジェクト"
+  },
+  {
+    "id": "unions.md",
+    "title": "UnionとNullable",
+    "group": "型とオブジェクト"
+  },
+  {
+    "id": "generics.md",
+    "title": "Generics",
+    "group": "型とオブジェクト"
+  },
+  {
+    "id": "members.md",
+    "title": "アクセス制御とstatic",
+    "group": "型とオブジェクト"
+  },
+  {
+    "id": "aliases-enums.md",
+    "title": "型エイリアスとenum",
+    "group": "型とオブジェクト"
+  },
+  {
+    "id": "modules.md",
+    "title": "モジュール",
+    "group": "外部連携"
+  },
+  {
+    "id": "javascript.md",
+    "title": "JavaScript・TypeScript・npm",
+    "group": "外部連携"
+  },
+  {
+    "id": "native-types.md",
+    "title": "ネイティブの型とメモリ",
+    "group": "ネイティブ"
+  },
+  {
+    "id": "native-ffi.md",
+    "title": "C ABIとWin32",
+    "group": "ネイティブ"
+  },
+  {
+    "id": "native-support.md",
+    "title": "ネイティブの対応範囲",
+    "group": "ネイティブ"
+  },
+  {
+    "id": "comparison.md",
+    "title": "Go・JavaScriptとの比較",
+    "group": "リファレンス"
+  },
+  {
+    "id": "builtins.md",
+    "title": "組み込み関数",
+    "group": "リファレンス"
+  },
+  {
+    "id": "syntax-reference.md",
+    "title": "構文の対応範囲",
+    "group": "リファレンス"
+  }
+]

@@ -1,0 +1,68 @@
+/* shadcn/ui-compatible semantic roles; shared design contract for GPUI.
+ * This prototype uses plain CSS, not the React shadcn/ui components.
+ * Values are explicit sRGB so they can also be mapped to GPUI colors.
+ */
+:root {
+  color-scheme: dark;
+  --background: #101212;
+  --foreground: #edf0eb;
+  --card: #191c1b;
+  --card-foreground: #edf0eb;
+  --popover: #191c1b;
+  --popover-foreground: #edf0eb;
+  --primary: #d3ef8e;
+  --primary-foreground: #182014;
+  --secondary: #252d20;
+  --secondary-foreground: #d3ef8e;
+  --muted: #222624;
+  --muted-foreground: #8b948d;
+  --accent: #252d20;
+  --accent-foreground: #d3ef8e;
+  --destructive: #ef7676;
+  --border: #2c302e;
+  --input: #3b423c;
+  --ring: #d3ef8e;
+  --sidebar: #141616;
+  --sidebar-foreground: #edf0eb;
+  --sidebar-accent: #252d20;
+  --sidebar-accent-foreground: #d3ef8e;
+  --sidebar-border: #2c302e;
+  --radius: 8px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+}
+body.light {
+  color-scheme: light;
+  --background: #f3f4ef;
+  --foreground: #252d20;
+  --card: #ffffff;
+  --card-foreground: #252d20;
+  --popover: #ffffff;
+  --popover-foreground: #252d20;
+  --primary: #b9d879;
+  --primary-foreground: #182014;
+  --secondary: #e9efdf;
+  --secondary-foreground: #354423;
+  --muted: #e9ece4;
+  --muted-foreground: #727e69;
+  --accent: #e9efdf;
+  --accent-foreground: #354423;
+  --border: #dfe4d8;
+  --input: #c5cebc;
+  --ring: #687f40;
+  --sidebar: #f9faf6;
+  --sidebar-foreground: #252d20;
+  --sidebar-accent: #e9efdf;
+  --sidebar-accent-foreground: #354423;
+  --sidebar-border: #dfe4d8;
+}
