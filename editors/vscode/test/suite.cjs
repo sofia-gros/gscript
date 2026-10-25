@@ -8,10 +8,10 @@ exports.run = async function () {
   await vscode.window.showTextDocument(doc);
   assert.strictEqual(doc.languageId, 'gscript');
   await vscode.extensions.getExtension('sofia-gros.gscript').activate();
-  async function waitFor(check) {
+  async function waitFor(check, label="GS diagnostics") {
     const end = Date.now()+30000;
     while(Date.now()<end) {if(await check()) return;await new Promise(r=>setTimeout(r,100));}
-    throw new Error('Timed out waiting for GS diagnostics');
+    throw new Error('Timed out waiting for '+label+': '+JSON.stringify(vscode.languages.getDiagnostics(uri))); 
   }
   await waitFor(()=>vscode.languages.getDiagnostics(uri).some(d=>d.source==='gs' && d.message.includes('type mismatch')));
   const edit = new vscode.WorkspaceEdit();
@@ -37,8 +37,8 @@ exports.run = async function () {
   await vscode.workspace.applyEdit(nativeEdit);
   await waitFor(async()=>{
     const h=await vscode.commands.executeCommand('vscode.executeHoverProvider',uri,new vscode.Position(2,9));
-    return h.some(x=>x.contents.some(c=>(c.value||'').includes('value: i32')));
-  });
+    return h.some(x=>x.contents.some(c=>(c.value||'').replace(/&nbsp;/g,' ').includes('value: i32')));
+  },'native i32 hover');
   assert(!vscode.languages.getDiagnostics(uri).some(d=>d.severity===vscode.DiagnosticSeverity.Error));
   const nativeSymbols=await vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider',uri);
   assert(nativeSymbols.some(s=>s.name==='value'));
