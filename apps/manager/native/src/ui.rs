@@ -732,6 +732,7 @@ impl Render for Manager {
             }
         }
         h_flex()
+            .relative()
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
@@ -777,6 +778,11 @@ impl Render for Manager {
                             .child(body),
                     ),
             )
+            // Root stores overlay state, but its child view must draw these layers.
+            // Otherwise open_dialog captures focus without displaying the installer.
+            .children(Root::render_sheet_layer(window, cx))
+            .children(Root::render_dialog_layer(window, cx))
+            .children(Root::render_notification_layer(window, cx))
     }
 }
 fn doc_sections(source: &str) -> Vec<(String, String)> {

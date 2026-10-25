@@ -696,12 +696,15 @@ pub fn extract(archive: &Path, destination: &Path) -> Result<()> {
     }
     Ok(())
 }
+#[cfg(unix)]
 fn set_executable(path: &Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755))?;
-    }
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))?;
+    Ok(())
+}
+#[cfg(not(unix))]
+fn set_executable(_path: &Path) -> Result<()> {
+    // Windows executability is determined by the file type, not Unix mode bits.
     Ok(())
 }
 pub fn find_executable(name: &str) -> Option<PathBuf> {
