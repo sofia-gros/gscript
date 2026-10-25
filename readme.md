@@ -48,6 +48,8 @@ flowchart LR
 
 [OS別インストール手順](docs/installation.md)に従い、公開済みコンパイラを導入します。冒頭のコードを`main.gs`として保存してください。
 
+Windowsのv0.6.1は、`gs.exe`と`_internal`を含む**フォルダー全体**で配置します。LSPも同様です。旧版のDLL展開エラーから更新する場合は、[復旧と入れ替えの手順](docs/windows-startup.md)を参照してください。
+
 ```sh
 gs main.gs
 node dist/main.js

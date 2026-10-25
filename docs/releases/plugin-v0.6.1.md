@@ -13,3 +13,7 @@ VSCodeで`gscript.server.path`、Zedで`lsp.gs-lsp.binary.path`に古いEXEを�
 [エディター導入](https://github.com/sofia-gros/gscript/blob/plugin-v0.6.1/docs/editors.md) / [Windows起動エラーと復旧](https://github.com/sofia-gros/gscript/blob/plugin-v0.6.1/docs/windows-startup.md)
 
 VSCode用VSIX、Zed開発拡張、3OSのLSP、Python zipapp、拡張のソースとSHA256SUMSを配布します。Zedの開発拡張はZed内で有効化し、画面の最終操作確認は利用者の実機で行います。
+
+## 配布物の確認
+
+[配布ワークフロー](https://github.com/sofia-gros/gscript/actions/runs/40213131299)が成功し、Windows上での起動を含む配布前確認を完了しました。公開ファイルのダウンロード後にもSHA256とWindows ZIP内の`_internal/VCRUNTIME140.dll`を含む構成を確認しています。実機の画面操作は別途利用環境で確認してください。
