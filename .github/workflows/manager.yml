@@ -1,0 +1,125 @@
+name: Release GScript Manager
+on:
+  push:
+    tags: ['manager-v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            rust_target: x86_64-pc-windows-msvc
+            platform: windows-x86_64
+            executable: gscript-manager.exe
+            rustflags: '-C target-feature=+crt-static'
+          - os: ubuntu-22.04
+            rust_target: x86_64-unknown-linux-gnu
+            platform: linux-x86_64
+            executable: gscript-manager
+            rustflags: ''
+          - os: macos-14
+            rust_target: aarch64-apple-darwin
+            platform: macos-arm64
+            executable: gscript-manager
+            rustflags: ''
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_BUILD_JOBS: '2'
+      PYTHONUTF8: '1'
+      RUSTFLAGS: ${{ matrix.rustflags }}
+      CARGO_PROFILE_RELEASE_LTO: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/manager/native -> target
+          shared-key: manager-${{ matrix.platform }}
+      - name: Install Linux build libraries
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          build-essential pkg-config libfontconfig1-dev libfreetype6-dev
+          libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libxcb1-dev
+          libx11-xcb-dev libvulkan-dev
+      - name: Validate provider metadata and download handling
+        run: cargo test --locked --manifest-path apps/manager/native/Cargo.toml --target ${{ matrix.rust_target }} --no-default-features --lib
+      - name: Build native GUI
+        run: cargo build --locked --release --manifest-path apps/manager/native/Cargo.toml --target ${{ matrix.rust_target }}
+      - name: Verify real Zig download and native C execution without changing PATH
+        shell: python
+        env:
+          MANAGER_BINARY: apps/manager/native/target/${{ matrix.rust_target }}/release/${{ matrix.executable }}
+        run: |
+          import os, subprocess, tempfile
+          from pathlib import Path
+          executable=Path(os.environ['MANAGER_BINARY']).resolve()
+          with tempfile.TemporaryDirectory(prefix='gs manager tools ') as directory:
+              result=subprocess.run([str(executable),'--install-toolchain','zig','--install-dir',directory,'--no-path'],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=1200)
+              print(result.stdout); print(result.stderr)
+              if result.returncode: raise SystemExit(result.returncode)
+              # Reusing the same installation must succeed without deleting it.
+              subprocess.run([str(executable),'--install-toolchain','zig','--install-dir',directory,'--no-path'],check=True,timeout=180)
+      - name: Verify Windows GCC installation and Clang installer download
+        if: runner.os == 'Windows'
+        shell: python
+        env:
+          MANAGER_BINARY: apps/manager/native/target/${{ matrix.rust_target }}/release/${{ matrix.executable }}
+        run: |
+          import os, subprocess, tempfile
+          from pathlib import Path
+          executable=Path(os.environ['MANAGER_BINARY']).resolve()
+          with tempfile.TemporaryDirectory(prefix='gs manager windows tools ') as directory:
+              subprocess.run([str(executable),'--install-toolchain','gcc','--install-dir',directory,'--no-path'],check=True,timeout=1200)
+              subprocess.run([str(executable),'--download-toolchain','clang','--download-dir',directory],check=True,timeout=1200)
+      - name: Package GUI without opening a window
+        run: >-
+          python scripts/package_manager.py
+          --binary apps/manager/native/target/${{ matrix.rust_target }}/release/${{ matrix.executable }}
+          --target ${{ matrix.platform }} --output manager-assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manager-${{ matrix.platform }}
+          path: manager-assets/*
+          if-no-files-found: error
+  publish:
+    if: startsWith(github.ref, 'refs/tags/manager-v')
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: manager-assets
+          merge-multiple: true
+      - run: python scripts/check_release_ref.py "${{ github.ref_name }}"
+      - name: Verify version and write checksums
+        shell: python
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          import os, tomllib, subprocess, sys
+          version=tomllib.load(open('apps/manager/native/Cargo.toml','rb'))['package']['version']
+          assert os.environ['RELEASE_TAG']=='manager-v'+version
+          subprocess.run([sys.executable,'scripts/checksums.py','manager-assets'],check=True)
+      - name: Publish GUI preview for user testing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          gh release create "$RELEASE_TAG" manager-assets/*
+          --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease
+          --title "GScript Manager ${RELEASE_TAG#manager-}"
+          --notes-file "docs/releases/$RELEASE_TAG.md"

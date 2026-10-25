@@ -16,7 +16,7 @@ cargo run --locked --manifest-path apps/manager/native/Cargo.toml
 cargo build --locked --release --manifest-path apps/manager/native/Cargo.toml
 ```
 
-出力は`apps/manager/native/target/release/gscript-manager`（Windowsは`.exe`）です。現時点で管理アプリ自体のGitHub Releaseや自動配布は行いません。
+出力は`apps/manager/native/target/release/gscript-manager`（Windowsは`.exe`）です。[Manager v0.6.2 Preview](https://github.com/sofia-gros/gscript/releases/tag/manager-v0.6.2)でActionsビルド済みの配布物を公開します。画面の最終操作テストは利用者の実機で行います。
 
 ### ビルド環境
 
@@ -46,8 +46,10 @@ LinuxでGPUを利用できない環境では、対応するMesaのソフトウ�
 - コンパイラ: 選択先にバージョン別ディレクトリを作成し、`bin/gs`（Windowsは`bin/gs.cmd`）から起動します。アプリ内ランタイム資源も同じ配布物に含まれます。
 - VSCode: 選択先の`vscode-extensions`へ、code CLIでVSIXを導入します。通常のVSCodeの保存先とは別なので、利用時も`code --extensions-dir <選択先>/vscode-extensions`で起動してください。code CLIが必要です。
 - Zed: 選択先に開発拡張を配置します。ZedのExtensions → Install Dev Extensionで、配置先内の`gscript-zed`を選択してください。Rust・Git等が必要です。有効化前は「配置済み」と表示し、インストール済みとは扱いません。
-- Zig: 選択先の`zig`へ公式0.15.2を導入し、チェックサム検証後にCプログラムをビルド・実行して確認します。
-- Clang / GCC: OSのパッケージ管理を使用するため、実体の保存先はOSの規則に従います。任意ディレクトリへの本体配置はZigを選んでください。
+- Zig: 選択先の`zig`へ公式の最新安定版を導入し、チェックサム検証後にCプログラムをビルド・実行して確認します。
+- WindowsのGCC: 公式WinGetカタログの最新版ZIPをSHA256検証し、選択先の`gcc`へ展開します。
+- WindowsのClang: 同カタログの最新版MSI / NSISインストーラーを検証して、選択先の`clang`へ導入します。UACの許可が必要です。WinGetコマンド自体は不要です。Windows SDK / MSVCランタイムの開発用ライブラリは別途必要です。
+- macOSのGCC / Clang: Homebrewのgcc / llvm提供版を使用します。LinuxはAPTカタログの候補版を使用します。これらの保存先はOS側の規則に従います。
 - ドキュメント: アプリ本体にMarkdownを埋め込みます。別の場所にも保存したい場合は、ドキュメント画面の「保存先を選んで書き出す」を使います。
 
 ### PATH
@@ -60,7 +62,7 @@ Linux/macOSはbashの`.bashrc`、zshの`.zshrc`へ追記します。既存ファ
 
 コンパイラとプラグインのReleaseを区別して取得します。GitHub REST APIが使えない場合は公開Atomフィードへフォールバックします。失敗時はエラーと保存済み情報を表示し、「最新」とは判断しません。配布物は公式ReleaseのSHA256SUMSで検証し、既存バージョンを保持したまま新しいバージョンを配置します。
 
-管理対象コンパイラの配布物は現在Linux x86_64、macOS arm64、Windows x86_64です。ほかのOS/CPUでは対応配布物がない旨を表示します。Clang / GCCはLinuxのpkexec + apt-get、macOSのXcode CLT / Homebrew、Windowsのwingetを使用し、認証やSDKが必要になる場合があります。
+管理対象コンパイラの配布物は現在Linux x86_64、macOS arm64、Windows x86_64です。ほかのOS/CPUでは対応配布物がない旨を表示します。Clang / GCCはLinuxのpkexec + apt-get、macOSのHomebrew、WindowsではMicrosoft WinGetカタログから取得した配布物を使用します。認証やSDKが必要になる場合があります。
 
 ## 同梱ドキュメント
 
@@ -79,7 +81,7 @@ cargo run --locked --manifest-path apps/manager/native/Cargo.toml -- --check-upd
 cargo test --locked --manifest-path apps/manager/native/Cargo.toml --no-default-features --lib
 ```
 
-このアプリ用のGitHub Actionsワークフローは追加していません。画面・実機での導入と更新の最終検証は未実施です。
+`.github/workflows/manager.yml`で3OSのGUIビルド・同梱文書確認・実ダウンロードの確認・配布物作成を行います。画面は開かず、最終の画面操作は利用者の実機で確認します。
 
 ## 導入したツールでGSを動かす
 
@@ -88,3 +90,36 @@ cargo test --locked --manifest-path apps/manager/native/Cargo.toml --no-default-
 ## ZedのRuffエラーについて
 
 RuffはPython用の言語サーバーで、GS拡張の依存ではありません。`ruff is not recognized`が出る場合のPythonへの導入・Zedの実行パス設定、使わない場合の無効化は[エディターのトラブルシューティング](../../../docs/editors.md#zedでruffが見つからないと出る場合)を参照してください。VSCode拡張はReleaseのVSIXを取得してインストールします。
+
+## 最新版とダウンロードURL
+
+固定しているのは配布元の情報APIとパッケージ識別子です。個別アーカイブの版・ファイル名・URLは固定しません。
+
+| ツール / OS | バージョン・取得先の情報源 |
+| --- | --- |
+| Zig | Zig公式download/index.jsonの安定版一覧。master / 開発版を除き、利用環境の最新版のURL・SHA256を読む |
+| Windows Clang / GCC | Microsoft winget-pkgs公式カタログのバージョン一覧とinstaller.yaml。CPU・InstallerUrl・InstallerSha256・保存場所を読む |
+| macOS Clang / GCC | brew info --json=v2 llvm / gcc。Homebrewが管理する提供版・URLで導入 |
+| Linux Clang / GCC | apt-cache madison。OSカタログの候補版を明示して導入。カタログ更新はOSのapt updateを使用 |
+
+画面ではインストール済みと取得可能な最新版を別々に表示します。版を比較できない場合や取得に失敗した場合は「未確認」とし、「最新」とは判定しません。インストール直前に配布情報を再取得し、実際の取得版を進捗に表示します。配布情報の取得にはネットワーク接続が必要です。
+
+Zigの更新時は旧版をzig-backupフォルダーへ退避し、新版の配置失敗時は元へ戻します。GCCの旧版も退避します。LLVMの更新・修復は取得した公式インストーラーが管理します。
+
+GUIを開かずに検出・最新版を確認する場合:
+
+```sh
+cargo run --locked --manifest-path apps/manager/native/Cargo.toml -- --toolchains
+```
+
+取得・インストールの確認用CLI（PATHは変更しません）:
+
+```sh
+gscript-manager --install-toolchain zig --install-dir /absolute/path/to/tools --no-path
+```
+
+WindowsではGCCにも使用できます。ClangのMSI等はGUIからUAC許可を含めて導入するか、ダウンロードだけを行えます。
+
+```powershell
+.\gscript-manager.exe --download-toolchain clang --download-dir C:\Downloads\gs-tools
+```

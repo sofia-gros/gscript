@@ -30,7 +30,7 @@ enum Page {
 enum Event {
     Updates(Result<Releases, String>),
     Detected(Vec<Toolchain>),
-    Installed,
+    Installed(String),
     Message(String),
 }
 struct Manager {
@@ -123,17 +123,27 @@ impl Manager {
                     }
                 }
                 Event::Detected(tools) => {
+                    let failed = tools.iter().filter(|t| t.lookup_error.is_some()).count();
                     self.toolchains = tools;
                     self.detecting = false;
-                    self.status = "検出とCプログラムのビルド・実行確認が完了しました".into()
+                    self.status = if failed == 0 {
+                        "導入済み・配布元の最新版・Cビルドを確認しました".into()
+                    } else {
+                        format!(
+                            "検出完了。{failed}件の最新版確認に失敗しました。取得元のエラーを確認してください"
+                        )
+                    };
                 }
-                Event::Installed => {
+                Event::Installed(product) => {
                     if let Ok(settings) = Settings::load() {
                         self.settings = settings
                     }
                     self.records = self.service.records(&self.settings);
                     self.status =
-                        "導入先を更新しました。PATH追加後は新しいターミナルを開いてください".into()
+                        "導入先を更新しました。PATH追加後は新しいターミナルを開いてください".into();
+                    if ["zig", "gcc", "clang"].contains(&product.as_str()) {
+                        self.detect(cx);
+                    }
                 }
                 Event::Message(text) => self.status = text,
             }
@@ -181,7 +191,25 @@ impl Manager {
             self.releases.plugins.clone()
         };
         let tx = self.tx.clone();
-        let view = cx.new(|cx| Installer::new(product, settings, service, release, tx, window, cx));
+        let latest_info = self.toolchains.iter().find(|t| t.name == product).map(|t| {
+            format!(
+                "確認済みの配布版: {} / {}。次へで取得元の情報を再確認します。",
+                t.download_version.as_deref().unwrap_or("未確認"),
+                t.provider.as_deref().unwrap_or("未確認")
+            )
+        });
+        let view = cx.new(|cx| {
+            Installer::new(
+                product,
+                settings,
+                service,
+                release,
+                tx,
+                latest_info,
+                window,
+                cx,
+            )
+        });
         window.open_dialog(cx, move |dialog, _, _| {
             dialog
                 .title("インストール")
@@ -243,6 +271,9 @@ impl Manager {
                     .selected(self.page == page)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.page = page;
+                        if page == Page::Toolchains {
+                            this.detect(cx);
+                        }
                         this.section = 0;
                         this.scroll.set_offset(point(px(0.), px(0.)));
                         cx.notify();
@@ -665,6 +696,7 @@ impl Render for Manager {
                                 .label("ネイティブ用ツールチェーンを管理")
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.page = Page::Toolchains;
+                                    this.detect(cx);
                                     cx.notify();
                                 })),
                         );
@@ -685,7 +717,7 @@ impl Render for Manager {
                         ));
                 }
                 Page::Toolchains => {
-                    body=body.child(div().text_sm().text_color(cx.theme().muted_foreground).child("Clang・GCC・Zigのいずれか1つが必要です。検出時にはCプログラムのビルドと実行も確認します。JS / TS出力だけなら不要です。")).child(Button::new("detect-toolchains").icon(IconName::Search).label(if self.detecting{"検査中…"}else{"検出する"}).disabled(self.detecting).on_click(cx.listener(|this,_,_,cx|this.detect(cx))));
+                    body=body.child(div().text_sm().text_color(cx.theme().muted_foreground).child("Clang・GCC・Zigのいずれか1つが必要です。検出時にはCプログラムのビルドと実行も確認します。JS / TS出力だけなら不要です。")).child(Button::new("detect-toolchains").icon(IconName::Search).label(if self.detecting{"検査中…"}else{"再検出・最新版を確認"}).disabled(self.detecting).on_click(cx.listener(|this,_,_,cx|this.detect(cx))));
                     body = body.child(
                         Button::new("native-build-guide")
                             .ghost()
@@ -705,18 +737,13 @@ impl Render for Manager {
                     );
                     for (name, label) in [("clang", "Clang"), ("gcc", "GCC"), ("zig", "Zig")] {
                         let tool = self.toolchains.iter().find(|t| t.name == name);
-                        let status = tool
-                            .map(|t| {
-                                format!(
-                                    "{}\n{}",
-                                    t.version,
-                                    t.executable
-                                        .as_ref()
-                                        .map(|p| p.display().to_string())
-                                        .unwrap_or_default()
-                                )
-                            })
-                            .unwrap_or_else(|| "未確認".into());
+                        let status=tool.map(|t|format!("インストール済み: {}\n最新版: {}\nダウンロード版: {}\n取得元: {}\n更新: {}\nCビルド確認: {}\n{}{}",
+                            t.version,t.latest_version.as_deref().unwrap_or("未確認"),t.download_version.as_deref().unwrap_or("未確認"),t.provider.as_deref().unwrap_or("未確認"),
+                            match t.update_available {Some(true)=>"更新あり",Some(false)=>"更新不要（同じ版または導入済みの方が新しい）",None=>"未確認"},
+                            if t.usable {"成功"}else{"未完了（未導入またはSDK等を確認してください）"},
+                            t.executable.as_ref().map(|p|p.display().to_string()).unwrap_or_default(),
+                            t.lookup_error.as_ref().map(|e|format!("\n最新版の確認エラー: {e}")).unwrap_or_default()
+                        )).unwrap_or_else(||if self.detecting {"インストール済み・最新版を確認中…".into()}else{"未確認".into()});
                         body = body.child(
                             h_flex()
                                 .gap_4()
@@ -737,7 +764,16 @@ impl Render for Manager {
                                 .child(
                                     Button::new(SharedString::from(format!("install-{name}")))
                                         .icon(IconName::ArrowDown)
-                                        .label("インストール")
+                                        .label(
+                                            if tool
+                                                .is_some_and(|t| t.update_available == Some(true))
+                                            {
+                                                "更新"
+                                            } else {
+                                                "インストール"
+                                            },
+                                        )
+                                        .disabled(self.detecting)
                                         .on_click(cx.listener(move |this, _, window, cx| {
                                             this.open_install(name, window, cx)
                                         })),
@@ -863,6 +899,7 @@ struct Installer {
     service: Service,
     release: service::Release,
     parent: Sender<Event>,
+    latest_info: Option<String>,
     path: Entity<InputState>,
     add_path: bool,
     system_path: bool,
@@ -881,6 +918,7 @@ impl Installer {
         service: Service,
         release: service::Release,
         parent: Sender<Event>,
+        latest_info: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -917,7 +955,9 @@ impl Installer {
                                             this.step = InstallStep::Done;
                                             this.percent = 100.0;
                                             this.message = text;
-                                            let _ = this.parent.send(Event::Installed);
+                                            let _ = this
+                                                .parent
+                                                .send(Event::Installed(this.product.clone()));
                                         }
                                         Err(error) => {
                                             this.step = InstallStep::Failed;
@@ -944,6 +984,7 @@ impl Installer {
             service,
             release,
             parent,
+            latest_info,
             path,
             add_path: true,
             system_path: false,
@@ -1077,6 +1118,14 @@ impl Render for Installer {
                                 ),
                         ),
                 );
+            if let Some(info) = &self.latest_info {
+                content = content.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(info.clone()),
+                );
+            }
             if !is_plugin {
                 content=content.child(Checkbox::new("add-path").checked(self.add_path).label("PATHへ追加する").on_click(cx.listener(|this,checked,_,cx|{this.add_path=*checked;cx.notify();}))).child(div().text_xs().text_color(cx.theme().muted_foreground).child(if cfg!(windows){"既定はユーザーPATHです。新しいターミナルで有効になります。"}else{"ユーザーのbash / zsh設定へ追加します。既存設定のバックアップを保存します。"}));
                 if cfg!(windows) {
@@ -1095,7 +1144,7 @@ impl Render for Installer {
                 content=content.child(div().text_xs().text_color(cx.theme().muted_foreground).child("拡張機能にPATH追加は不要です。VSCodeは選択先のvscode-extensionsを使用し、Zedは選択先を開発拡張として参照します。"));
             }
             if ["clang", "gcc"].contains(&self.product.as_str()) {
-                content=content.child(div().text_xs().text_color(cx.theme().muted_foreground).child("Clang / GCCはOSのパッケージ管理から導入します。ツール本体の保存先はOS側の規則に従い、認証が必要な場合があります。任意フォルダーへ配置する場合はZigを選べます。"));
+                content=content.child(div().text_xs().text_color(cx.theme().muted_foreground).child("Windowsでは公式カタログの最新版・URL・SHA256を確認し、選択先へ取得します。ClangのインストーラーはWindowsのUAC許可とSDKが必要です。macOS / LinuxはOSのパッケージ管理を使用します。"));
             }
             if !self.message.is_empty() {
                 content = content.child(

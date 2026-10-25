@@ -1,4 +1,5 @@
 //! OS operations live outside GPUI. No shell interpolation, no background privilege escalation.
+use crate::toolchains::{self, ToolchainRelease};
 use anyhow::{Context, Result, bail, ensure};
 use directories::ProjectDirs;
 use reqwest::blocking::Client;
@@ -15,7 +16,7 @@ use std::{
 use wait_timeout::ChildExt;
 const REPO: &str = "https://github.com/sofia-gros/gscript";
 const API: &str = "https://api.github.com/repos/sofia-gros/gscript";
-const MAX_DOWNLOAD: u64 = 700 * 1024 * 1024;
+const MAX_DOWNLOAD: u64 = 2 * 1024 * 1024 * 1024;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub compiler_dir: PathBuf,
@@ -102,12 +103,17 @@ pub struct Installed {
     pub executable: Option<PathBuf>,
     pub prepared: bool,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Toolchain {
     pub name: String,
     pub executable: Option<PathBuf>,
     pub version: String,
     pub usable: bool,
+    pub latest_version: Option<String>,
+    pub download_version: Option<String>,
+    pub provider: Option<String>,
+    pub update_available: Option<bool>,
+    pub lookup_error: Option<String>,
 }
 #[derive(Clone, Debug)]
 pub struct Progress {
@@ -139,7 +145,7 @@ impl Service {
             client: Client::builder()
                 .user_agent(concat!("GScript-Manager/", env!("CARGO_PKG_VERSION")))
                 .connect_timeout(Duration::from_secs(15))
-                .timeout(Duration::from_secs(180))
+                .timeout(Duration::from_secs(15 * 60))
                 .build()?,
         })
     }
@@ -201,7 +207,14 @@ impl Service {
         parse_feed(&xml)
     }
     fn text(&self, url: &str, limit: u64) -> Result<String> {
-        let response = self.client.get(url).send()?.error_for_status()?;
+        let response = self
+            .client
+            .get(url)
+            .timeout(Duration::from_secs(30))
+            .send()
+            .with_context(|| format!("配布情報への接続に失敗しました: {url}"))?
+            .error_for_status()
+            .with_context(|| format!("配布情報を取得できません: {url}"))?;
         let mut text = String::new();
         response.take(limit + 1).read_to_string(&mut text)?;
         ensure!(text.len() as u64 <= limit, "応答が大きすぎます");
@@ -214,11 +227,61 @@ impl Service {
         expected: &str,
         progress: &impl Fn(Progress),
     ) -> Result<()> {
+        for attempt in 0..3 {
+            match self.download_once(url, destination, expected, progress) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    let transient = error.chain().any(|cause| {
+                        cause.downcast_ref::<reqwest::Error>().is_some_and(|e| {
+                            e.is_timeout()
+                                || e.is_connect()
+                                || e.status()
+                                    .is_some_and(|s| s.is_server_error() || s.as_u16() == 429)
+                        }) || cause.downcast_ref::<std::io::Error>().is_some_and(|e| {
+                            matches!(
+                                e.kind(),
+                                std::io::ErrorKind::TimedOut
+                                    | std::io::ErrorKind::ConnectionReset
+                                    | std::io::ErrorKind::UnexpectedEof
+                                    | std::io::ErrorKind::ConnectionAborted
+                            )
+                        })
+                    });
+                    if !transient || attempt == 2 {
+                        let _ = fs::remove_file(destination);
+                        return Err(error);
+                    }
+                    progress(Progress {
+                        message: format!(
+                            "通信が中断したため再取得します（{}/3）: {url}",
+                            attempt + 2
+                        ),
+                        percent: 0.0,
+                    });
+                    std::thread::sleep(Duration::from_secs(attempt + 1));
+                }
+            }
+        }
+        unreachable!()
+    }
+    fn download_once(
+        &self,
+        url: &str,
+        destination: &Path,
+        expected: &str,
+        progress: &impl Fn(Progress),
+    ) -> Result<()> {
         ensure!(
             expected.len() == 64 && expected.bytes().all(|b| b.is_ascii_hexdigit()),
             "SHA256が不正です"
         );
-        let mut response = self.client.get(url).send()?.error_for_status()?;
+        let mut response = self
+            .client
+            .get(url)
+            .send()
+            .with_context(|| format!("ダウンロード先へ接続できません: {url}"))?
+            .error_for_status()
+            .with_context(|| format!("ダウンロード先がエラーを返しました: {url}"))?;
         if let Some(size) = response.content_length() {
             ensure!(size <= MAX_DOWNLOAD, "配布物が大きすぎます");
         }
@@ -229,7 +292,9 @@ impl Service {
         let mut buffer = [0u8; 64 * 1024];
         let mut total = 0;
         loop {
-            let n = response.read(&mut buffer)?;
+            let n = response.read(&mut buffer).with_context(|| {
+                format!("ダウンロード受信が中断しました: {url}（受信済み {total} bytes）")
+            })?;
             if n == 0 {
                 break;
             }
@@ -411,44 +476,127 @@ impl Service {
         }
         Ok(settings.docs_dir.clone())
     }
-    pub fn detect_toolchains(&self, settings: &Settings) -> Vec<Toolchain> {
-        ["clang", "gcc", "zig"]
+    fn inspect_toolchain(&self, name: &str, settings: &Settings) -> Toolchain {
+        let managed = settings.toolchains_dir.join(name);
+        let candidates = [
+            managed.join(exe_name(name)),
+            managed.join("bin").join(exe_name(name)),
+            managed.join("mingw64/bin").join(exe_name(name)),
+            managed.join("mingw32/bin").join(exe_name(name)),
+        ];
+        let executable = candidates
             .into_iter()
-            .map(|name| {
-                let executable = find_executable(name).or_else(|| {
-                    let path = settings.toolchains_dir.join("zig").join(exe_name("zig"));
-                    (name == "zig" && path.is_file()).then_some(path)
-                });
-                let mut version = String::from("未検出");
-                let mut usable = false;
-                if let Some(exe) = &executable {
-                    match run(
-                        exe,
-                        [if name == "zig" {
-                            "version"
-                        } else {
-                            "--version"
-                        }],
-                        Duration::from_secs(10),
-                    ) {
-                        Ok(text) => {
-                            version = text.lines().next().unwrap_or("検出済み").into();
-                            usable = probe_compiler(exe, name).is_ok();
-                            if !usable {
-                                version.push_str("（SDK / リンクの確認に失敗）");
+            .find(|p| p.is_file())
+            .or_else(|| find_executable(name));
+        let mut version = "未検出".to_string();
+        let mut usable = false;
+        if let Some(exe) = &executable {
+            match run(
+                exe,
+                [if name == "zig" {
+                    "version"
+                } else {
+                    "--version"
+                }],
+                Duration::from_secs(10),
+            ) {
+                Ok(text) => {
+                    version = text.lines().next().unwrap_or("検出済み").into();
+                    usable = probe_compiler(exe, name).is_ok();
+                }
+                Err(error) => version = format!("起動失敗: {error:#}"),
+            }
+        }
+        Toolchain {
+            name: name.into(),
+            executable,
+            version,
+            usable,
+            latest_version: None,
+            download_version: None,
+            provider: None,
+            update_available: None,
+            lookup_error: None,
+        }
+    }
+    pub fn latest_toolchain(&self, name: &str) -> Result<ToolchainRelease> {
+        if name == "zig" {
+            let json = self.text("https://ziglang.org/download/index.json", 8 * 1024 * 1024)?;
+            return toolchains::zig_release(
+                &json,
+                zig_target(std::env::consts::ARCH, std::env::consts::OS)?,
+            );
+        }
+        ensure!(["clang", "gcc"].contains(&name), "不明なツールチェーンです");
+        #[cfg(windows)]
+        {
+            let path = toolchains::manifest_path(name)?;
+            let version=self.text(&format!("https://api.github.com/repos/microsoft/winget-pkgs/contents/manifests/{path}"),4*1024*1024)
+                .and_then(|body|toolchains::github_catalog_versions(&body))
+                .or_else(|_|self.text(&format!("https://github.com/microsoft/winget-pkgs/tree/master/manifests/{path}"),4*1024*1024).and_then(|body|toolchains::github_catalog_versions(&body)))?;
+            let id = toolchains::package_id(name)?;
+            let manifest=self.text(&format!("https://raw.githubusercontent.com/microsoft/winget-pkgs/master/manifests/{path}/{version}/{id}.installer.yaml"),2*1024*1024)?;
+            let release = toolchains::windows_manifest(&manifest, name, std::env::consts::ARCH)?;
+            ensure!(
+                release.version == version,
+                "カタログとマニフェストの版が一致しません"
+            );
+            return Ok(release);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let brew =
+                find_executable("brew").context("最新版の配布情報確認にはHomebrewが必要です")?;
+            let formula = if name == "clang" { "llvm" } else { "gcc" };
+            return toolchains::brew_release(
+                &run(
+                    &brew,
+                    ["info", "--json=v2", formula],
+                    Duration::from_secs(120),
+                )?,
+                name,
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let apt =
+                find_executable("apt-cache").context("このOSのAPTカタログを取得できません")?;
+            return toolchains::apt_release(
+                &run(&apt, ["madison", name], Duration::from_secs(30))?,
+                name,
+            );
+        }
+        #[allow(unreachable_code)]
+        Err(anyhow::anyhow!("このOSの配布元を確認できません"))
+    }
+    pub fn detect_toolchains(&self, settings: &Settings) -> Vec<Toolchain> {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = ["clang", "gcc", "zig"]
+                .into_iter()
+                .map(|name| {
+                    scope.spawn(move || {
+                        let mut tool = self.inspect_toolchain(name, settings);
+                        match self.latest_toolchain(name) {
+                            Ok(release) => {
+                                let available = release.tool_version();
+                                tool.update_available =
+                                    toolchains::installed_version(name, &tool.version)
+                                        .and_then(|v| toolchains::newer_version(&v, &available));
+                                tool.latest_version = Some(available);
+                                tool.download_version = Some(release.version);
+                                tool.provider = Some(release.source);
                             }
+                            Err(error) => tool.lookup_error = Some(format!("{error:#}")),
                         }
-                        Err(error) => version = format!("起動失敗: {error}"),
-                    }
-                }
-                Toolchain {
-                    name: name.into(),
-                    executable,
-                    version,
-                    usable,
-                }
-            })
-            .collect()
+                        tool
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("toolchain inspection worker"))
+                .collect()
+        })
     }
     pub fn install_toolchain(
         &self,
@@ -460,63 +608,258 @@ impl Service {
             return self.install_zig(settings, progress);
         }
         ensure!(["clang", "gcc"].contains(&name), "不明なツールチェーンです");
-        progress(
-            "OSのパッケージ管理ツールを起動しています。認証画面が表示される場合があります。".into(),
-        );
-        install_system_compiler(name)?;
-        let found = self
-            .detect_toolchains(settings)
-            .into_iter()
-            .find(|t| t.name == name && t.usable);
+        let release = self
+            .latest_toolchain(name)
+            .context("インストール対象の最新版を確認できませんでした")?;
+        let current = self.inspect_toolchain(name, settings);
+        let managed = current
+            .executable
+            .as_ref()
+            .is_some_and(|p| p.starts_with(settings.toolchains_dir.join(name)));
+        if current.usable
+            && (!cfg!(windows) || managed)
+            && toolchains::installed_version(name, &current.version)
+                .and_then(|v| toolchains::newer_version(&v, &release.tool_version()))
+                == Some(false)
+        {
+            return Ok(format!(
+                "{name}は使用可能な版です。{} / 配布元: {}",
+                current.version, release.source
+            ));
+        }
+        progress(Progress {
+            message: format!(
+                "{} v{}を取得・導入します（{}）",
+                name, release.version, release.source
+            ),
+            percent: 0.0,
+        });
+        #[cfg(windows)]
+        {
+            return self.install_windows_toolchain(name, &release, settings, progress);
+        }
+        #[cfg(not(windows))]
+        {
+            progress(
+                "OSのパッケージ管理ツールを起動しています。認証画面が表示される場合があります。"
+                    .into(),
+            );
+            let installed = install_system_compiler(name, &release);
+            // Windows installers update registry PATH, not the environment of this running process.
+            let inspected = self.inspect_toolchain(name, settings);
+            let tool = inspected.executable.is_some().then_some(inspected);
+            if let Some(tool) = tool {
+                if tool.usable {
+                    return Ok(format!(
+                        "{name}を導入し、Cプログラムのビルド・実行を確認しました。{}",
+                        tool.version
+                    ));
+                }
+                installed.with_context(|| format!("{name}の導入処理に失敗しました"))?;
+                return Ok(format!(
+                    "{name}の導入は完了しましたが、SDK / ライブラリを含むビルド検証は未完了です。{}\n実行ファイル: {}",
+                    tool.version,
+                    tool.executable.unwrap().display()
+                ));
+            }
+            installed.with_context(|| format!("{name}の導入処理に失敗しました"))?;
+            bail!(
+                "導入処理は終了しましたが{name}を検出できません。パッケージ管理ツールの出力とインストール先を確認してください。"
+            )
+        }
+    }
+    #[cfg(windows)]
+    fn install_windows_toolchain(
+        &self,
+        name: &str,
+        release: &ToolchainRelease,
+        settings: &Settings,
+        progress: &impl Fn(Progress),
+    ) -> Result<String> {
+        validate_destination(&settings.toolchains_dir)?;
+        fs::create_dir_all(&settings.toolchains_dir)?;
+        let stage = tempfile::Builder::new()
+            .prefix(".gscript-tool-")
+            .tempdir_in(&settings.toolchains_dir)?;
+        let url = release
+            .url
+            .as_deref()
+            .context("配布マニフェストにURLがありません")?;
+        let hash = release
+            .sha256
+            .as_deref()
+            .context("配布マニフェストにSHA256がありません")?;
+        let parsed = reqwest::Url::parse(url)?;
+        let filename = parsed
+            .path_segments()
+            .and_then(|p| p.last())
+            .filter(|p| !p.is_empty())
+            .context("取得ファイル名が不明です")?;
+        ensure!(safe_entry(Path::new(filename)), "取得ファイル名が不正です");
+        let archive = stage.path().join(filename);
+        self.download(url, &archive, hash, progress)?;
+        let destination = settings.toolchains_dir.join(name);
+        let executable = if release.installer_type.as_deref() == Some("zip") {
+            progress(Progress {
+                message: format!("{name}を展開しています…"),
+                percent: 80.0,
+            });
+            let content = stage.path().join("content");
+            fs::create_dir(&content)?;
+            extract(&archive, &content)?;
+            let relative = release
+                .executable
+                .as_deref()
+                .context("配布マニフェストにコンパイラの保存場所がありません")?;
+            ensure!(
+                safe_entry(Path::new(relative)),
+                "配布マニフェストの保存場所が不正です"
+            );
+            let candidate = content.join(relative);
+            ensure!(candidate.is_file(), "展開したコンパイラがありません");
+            probe_compiler(&candidate, name)
+                .context("取得したコンパイラのCビルド確認に失敗しました")?;
+            promote_toolchain_named(&content, &destination, name)?;
+            destination.join(relative)
+        } else {
+            progress(Progress {
+                message: "検証済みインストーラーを実行します。WindowsのUACで許可してください。"
+                    .into(),
+                percent: 85.0,
+            });
+            install_windows_package(&archive, &destination, release)?;
+            let exe = destination.join("bin").join(exe_name(name));
+            ensure!(
+                exe.is_file(),
+                "インストーラー完了後の実行ファイルが見つかりません"
+            );
+            exe
+        };
+        let output = run(&executable, ["--version"], Duration::from_secs(15))?;
+        let actual = toolchains::installed_version(name, &output)
+            .context("導入したコンパイラの版を確認できません")?;
         ensure!(
-            found.is_some(),
-            "導入処理は終了しましたが、コンパイラとSDKの実行確認は完了していません。新しいセッションで再検出してください。"
+            actual == release.tool_version(),
+            "導入されたバージョンが配布情報と一致しません"
         );
-        Ok(format!("{name}を検出・実行確認しました"))
+        let bin = executable
+            .parent()
+            .context("コンパイラの保存先が不明です")?;
+        configure_path(bin, settings.path_scope).with_context(|| {
+            format!(
+                "導入は完了しましたがPATH設定に失敗しました: {}",
+                bin.display()
+            )
+        })?;
+        let usable = probe_compiler(&executable, name).is_ok();
+        Ok(format!(
+            "{name} v{actual}の導入が完了しました。\n保存先: {}\nCビルド確認: {}",
+            executable.display(),
+            if usable {
+                "成功"
+            } else {
+                "SDK / ライブラリを確認してください（導入済み）"
+            }
+        ))
+    }
+    pub fn download_toolchain(
+        &self,
+        name: &str,
+        directory: &Path,
+        progress: &impl Fn(Progress),
+    ) -> Result<PathBuf> {
+        validate_destination(directory)?;
+        fs::create_dir_all(directory)?;
+        let release = self.latest_toolchain(name)?;
+        let url = release
+            .url
+            .as_deref()
+            .context("この取得元はOSのパッケージ管理を使用します")?;
+        let hash = release
+            .sha256
+            .as_deref()
+            .context("配布情報にSHA256がありません")?;
+        let parsed = reqwest::Url::parse(url)?;
+        let filename = parsed
+            .path_segments()
+            .and_then(|s| s.last())
+            .filter(|s| !s.is_empty())
+            .context("配布ファイル名がありません")?;
+        ensure!(safe_entry(Path::new(filename)), "配布ファイル名が不正です");
+        let destination = directory.join(filename);
+        ensure!(
+            !destination.exists(),
+            "同名ファイルが既にあります: {}",
+            destination.display()
+        );
+        progress(Progress {
+            message: format!("{} v{} / {}", name, release.version, release.source),
+            percent: 0.0,
+        });
+        self.download(url, &destination, hash, progress)?;
+        Ok(destination)
     }
     fn install_zig(&self, settings: &Settings, progress: &impl Fn(Progress)) -> Result<String> {
-        progress("Zig公式の配布情報を確認しています…".into());
-        let json: serde_json::Value = serde_json::from_str(
-            &self.text("https://ziglang.org/download/index.json", 8 * 1024 * 1024)?,
-        )?;
-        let target = match (std::env::consts::ARCH, std::env::consts::OS) {
-            ("x86_64", "windows") => "x86_64-windows",
-            ("x86_64", "linux") => "x86_64-linux",
-            ("aarch64", "macos") => "aarch64-macos",
-            ("x86_64", "macos") => "x86_64-macos",
-            ("aarch64", "linux") => "aarch64-linux",
-            _ => bail!("この環境のZig導入は未対応です"),
-        };
-        let entry = &json["0.15.2"][target];
-        let url = entry["tarball"]
-            .as_str()
-            .context("Zigの配布物がありません")?;
-        ensure!(
-            url.starts_with("https://ziglang.org/download/0.15.2/"),
-            "Zigの取得先が不正です"
-        );
-        let hash = entry["shasum"]
-            .as_str()
-            .context("ZigのSHA256がありません")?;
+        progress("Zig公式の最新版を確認しています…".into());
+        let release = self
+            .latest_toolchain("zig")
+            .context("Zig公式から最新版を確認できませんでした")?;
+        let version = release.version.as_str();
+        let url = release
+            .url
+            .as_deref()
+            .context("Zig最新版の取得先がありません")?;
+        let hash = release
+            .sha256
+            .as_deref()
+            .context("Zig最新版にSHA256がありません")?;
+        progress(Progress {
+            message: format!("Zig v{version}を取得します（{}）", release.source),
+            percent: 0.0,
+        });
         validate_destination(&settings.toolchains_dir)?;
         fs::create_dir_all(&settings.toolchains_dir)?;
         let destination = settings.toolchains_dir.join("zig");
-        ensure!(
-            !destination.exists(),
-            "Zigの保存先が既に存在します: {}",
-            destination.display()
+        let mut previous_version = None;
+        if destination.exists() {
+            let exe = destination.join(exe_name("zig"));
+            let current = run(&exe, ["version"], Duration::from_secs(15)).context(
+                "Zigの保存先が存在しますが起動できません。既存フォルダーは自動削除しません",
+            )?;
+            let current = current.trim();
+            Version::parse(current).context("配置済みZigのバージョンを確認できません")?;
+            if toolchains::newer_version(current, &release.version) == Some(false) {
+                probe_compiler(&exe, "zig").context("配置済みZigのCビルド確認に失敗しました")?;
+                configure_path(&destination, settings.path_scope).with_context(|| {
+                    format!(
+                        "Zigは配置済みですがPATH設定に失敗しました: {}",
+                        destination.display()
+                    )
+                })?;
+                return Ok(format!(
+                    "Zig v{current}は利用可能な最新版以上です。保存先: {}",
+                    destination.display()
+                ));
+            }
+            previous_version = Some(current.to_string());
+        }
+        let stage = tempfile::Builder::new()
+            .prefix(".gscript-zig-")
+            .tempdir_in(&settings.toolchains_dir)?;
+        let archive = stage.path().join(
+            url.rsplit('/')
+                .next()
+                .context("Zigのファイル名がありません")?,
         );
-        let stage = tempfile::tempdir_in(&settings.toolchains_dir)?;
-        let name = url
-            .rsplit('/')
-            .next()
-            .context("Zigのファイル名がありません")?;
-        let archive = stage.path().join(name);
-        progress("Zigを取得しSHA256を検証しています…".into());
+        progress("Zigを取得しています…".into());
         self.download(url, &archive, hash, progress)?;
+        progress(Progress {
+            message: "Zigを展開しています…".into(),
+            percent: 80.0,
+        });
         let out = stage.path().join("content");
         fs::create_dir(&out)?;
-        extract(&archive, &out)?;
+        extract(&archive, &out).context("Zigのアーカイブを展開できませんでした")?;
         let folder = fs::read_dir(&out)?
             .filter_map(|e| e.ok())
             .find(|e| e.path().join(exe_name("zig")).is_file())
@@ -524,17 +867,153 @@ impl Service {
             .path();
         let exe = folder.join(exe_name("zig"));
         set_executable(&exe)?;
-        probe_compiler(&exe, "zig")?;
-        fs::rename(folder, &destination)?;
-        if let Err(e) = configure_path(&destination, settings.path_scope) {
-            let _ = fs::remove_dir_all(&destination);
-            return Err(e);
-        };
+        progress(Progress {
+            message: "ZigでCプログラムをビルド・実行しています…".into(),
+            percent: 90.0,
+        });
+        probe_compiler(&exe, "zig").context("Zigの受信・展開後のCビルド確認に失敗しました")?;
+        let actual = run(&exe, ["version"], Duration::from_secs(15))?;
+        ensure!(
+            actual.trim() == release.version,
+            "取得したZigのバージョンが配布情報と一致しません"
+        );
+        promote_toolchain(&folder, &destination, previous_version.as_deref())?;
+        // A PATH failure must not discard a successfully downloaded and verified compiler.
+        configure_path(&destination,settings.path_scope).with_context(||format!("Zigの配置は完了しましたがPATHの設定に失敗しました。保存先: {}。PATH追加を外して再実行するか手動で設定してください",destination.display()))?;
         Ok(format!(
-            "Zig 0.15.2を導入しました: {}",
+            "Zig v{}を導入しました: {}",
+            release.version,
             destination.display()
         ))
     }
+}
+#[cfg(windows)]
+fn promote_toolchain_named(staged: &Path, destination: &Path, name: &str) -> Result<()> {
+    let backup = if destination.exists() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let backup = destination.with_file_name(format!("{name}-backup-{stamp}"));
+        fs::rename(destination, &backup)?;
+        Some(backup)
+    } else {
+        None
+    };
+    if let Err(error) = fs::rename(staged, destination) {
+        if let Some(backup) = backup {
+            fs::rename(backup, destination)?;
+        }
+        return Err(error.into());
+    }
+    Ok(())
+}
+#[cfg(windows)]
+fn install_windows_package(
+    package: &Path,
+    destination: &Path,
+    release: &ToolchainRelease,
+) -> Result<()> {
+    let path = package.to_string_lossy();
+    let root = destination.to_string_lossy();
+    ensure!(
+        !path.contains('"') && !root.contains('"'),
+        "保存先に引用符は使えません"
+    );
+    let (program, parameters) = if package
+        .extension()
+        .is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case("msi"))
+    {
+        let template = release
+            .install_location
+            .as_deref()
+            .context("MSIの保存先プロパティが取得できません")?;
+        let property = template
+            .split('=')
+            .next()
+            .context("MSIの保存先指定が不正です")?;
+        ensure!(
+            !property.is_empty()
+                && property
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'_'),
+            "MSIの保存先プロパティが不正です"
+        );
+        (
+            "msiexec.exe".to_string(),
+            format!("/i \"{path}\" /qn /norestart \"{property}={root}\""),
+        )
+    } else if release.installer_type.as_deref() == Some("nullsoft") {
+        (path.to_string(), format!("/S /D={root}"))
+    } else {
+        bail!("このインストーラー形式は未対応です。導入は行いません")
+    };
+    run_elevated(&program, &parameters)
+}
+#[cfg(windows)]
+fn run_elevated(program: &str, parameters: &str) -> Result<()> {
+    use windows_sys::Win32::{
+        Foundation::*,
+        System::Threading::*,
+        UI::{Shell::*, WindowsAndMessaging::SW_HIDE},
+    };
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let file = wide(program);
+    let args = wide(parameters);
+    let verb = wide("runas");
+    unsafe {
+        let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+        info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+        info.lpVerb = verb.as_ptr();
+        info.lpFile = file.as_ptr();
+        info.lpParameters = args.as_ptr();
+        info.nShow = SW_HIDE;
+        ensure!(
+            ShellExecuteExW(&mut info) != 0,
+            "インストーラーを開始できませんでした（UACキャンセル等）: {}",
+            std::io::Error::last_os_error()
+        );
+        let status = WaitForSingleObject(info.hProcess, 1800 * 1000);
+        let mut code = 0;
+        let success = GetExitCodeProcess(info.hProcess, &mut code);
+        CloseHandle(info.hProcess);
+        ensure!(
+            status == WAIT_OBJECT_0 && success != 0,
+            "インストーラーの完了を確認できません。進行中の場合は終了後に再検出してください"
+        );
+        ensure!(
+            code == 0 || code == 3010,
+            "インストーラーが終了コード{code}で失敗しました"
+        );
+    }
+    Ok(())
+}
+fn promote_toolchain(
+    staged: &Path,
+    destination: &Path,
+    previous_version: Option<&str>,
+) -> Result<()> {
+    let backup = if let Some(version) = previous_version {
+        let version = Version::parse(version)?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let backup = destination.with_file_name(format!("zig-backup-{version}-{stamp}"));
+        fs::rename(destination, &backup)
+            .context("旧版Zigの退避に失敗しました。実行中のZigがあれば終了してください")?;
+        Some(backup)
+    } else {
+        None
+    };
+    if let Err(error) = fs::rename(staged, destination) {
+        if let Some(backup) = backup {
+            fs::rename(&backup, destination).context(
+                "配置に失敗し、旧版の復元も失敗しました。zig-backupフォルダーを確認してください",
+            )?;
+        }
+        return Err(error).context("新しいZigの配置に失敗しました。旧版は復元しました");
+    }
+    Ok(())
 }
 fn insert_release(
     tag: &str,
@@ -707,22 +1186,94 @@ fn set_executable(_path: &Path) -> Result<()> {
     // Windows executability is determined by the file type, not Unix mode bits.
     Ok(())
 }
+fn executable_dirs() -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    #[cfg(windows)]
+    {
+        use winreg::{RegKey, enums::*};
+        for (hive, key) in [
+            (HKEY_CURRENT_USER, "Environment"),
+            (
+                HKEY_LOCAL_MACHINE,
+                "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+            ),
+        ] {
+            if let Ok(key) = RegKey::predef(hive).open_subkey(key) {
+                if let Ok(value) = key.get_value::<String, _>("Path") {
+                    paths.extend(std::env::split_paths(&expand_windows_environment(&value)));
+                }
+            }
+        }
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            paths.push(PathBuf::from(&local).join("Microsoft/WindowsApps"));
+            paths.push(PathBuf::from(local).join("Microsoft/WinGet/Links"));
+        }
+        if let Some(program) = std::env::var_os("ProgramFiles") {
+            paths.push(PathBuf::from(&program).join("LLVM/bin"));
+            paths.push(PathBuf::from(program).join("WinGet/Links"));
+        }
+    }
+    paths.dedup();
+    paths
+}
+#[cfg(windows)]
+fn expand_windows_environment(value: &str) -> std::ffi::OsString {
+    use std::os::windows::ffi::OsStringExt;
+    let input: Vec<u16> = value.encode_utf16().chain(Some(0)).collect();
+    unsafe {
+        let size = windows_sys::Win32::System::Environment::ExpandEnvironmentStringsW(
+            input.as_ptr(),
+            std::ptr::null_mut(),
+            0,
+        );
+        if size == 0 {
+            return value.into();
+        }
+        let mut buffer = vec![0u16; size as usize];
+        let written = windows_sys::Win32::System::Environment::ExpandEnvironmentStringsW(
+            input.as_ptr(),
+            buffer.as_mut_ptr(),
+            size,
+        );
+        if written == 0 || written > size {
+            return value.into();
+        }
+        std::ffi::OsString::from_wide(&buffer[..written as usize - 1])
+    }
+}
 pub fn find_executable(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
+    find_in_dirs(name, &executable_dirs())
+}
+fn find_in_dirs(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    for dir in dirs {
         for suffix in if cfg!(windows) {
             vec![".exe", ".cmd", ""]
         } else {
             vec![""]
         } {
             let exe = dir.join(format!("{name}{suffix}"));
-            if exe.is_file() {
+            // App Execution Aliases (including winget.exe) can be reparse points.
+            if fs::symlink_metadata(&exe).is_ok_and(|m| !m.is_dir()) {
                 return Some(exe);
             }
         }
     }
     None
 }
+pub fn zig_target(arch: &str, os: &str) -> Result<&'static str> {
+    match (arch, os) {
+        ("x86_64", "windows") => Ok("x86_64-windows"),
+        ("aarch64", "windows") => Ok("aarch64-windows"),
+        ("x86_64", "linux") => Ok("x86_64-linux"),
+        ("aarch64", "linux") => Ok("aarch64-linux"),
+        ("x86_64", "macos") => Ok("x86_64-macos"),
+        ("aarch64", "macos") => Ok("aarch64-macos"),
+        _ => bail!("この環境のZig導入は未対応です"),
+    }
+}
+
 pub fn run<I, S>(program: &Path, args: I, timeout: Duration) -> Result<String>
 where
     I: IntoIterator<Item = S>,
@@ -731,6 +1282,13 @@ where
     let stdout = tempfile::tempfile()?;
     let stderr = tempfile::tempfile()?;
     let mut command = Command::new(program);
+    let mut paths = executable_dirs();
+    if let Some(parent) = program.parent().filter(|p| !p.as_os_str().is_empty()) {
+        paths.insert(0, parent.to_path_buf());
+    }
+    if let Ok(path) = std::env::join_paths(paths) {
+        command.env("PATH", path);
+    }
     command
         .args(args)
         .stdin(Stdio::null())
@@ -911,7 +1469,9 @@ pub fn configure_path(bin: &Path, scope: PathScope) -> Result<()> {
     }
     Ok(())
 }
-fn install_system_compiler(name: &str) -> Result<()> {
+#[cfg(not(windows))]
+fn install_system_compiler(name: &str, release: &ToolchainRelease) -> Result<()> {
+    let _ = name;
     #[cfg(target_os = "linux")]
     {
         if let Some(pkexec) = find_executable("pkexec") {
@@ -923,7 +1483,7 @@ fn install_system_compiler(name: &str) -> Result<()> {
                     apt.as_os_str(),
                     "install".as_ref(),
                     "-y".as_ref(),
-                    name.as_ref(),
+                    format!("{}={}", release.package, release.version).as_ref(),
                 ],
                 Duration::from_secs(1800),
             )?;
@@ -935,39 +1495,10 @@ fn install_system_compiler(name: &str) -> Result<()> {
     }
     #[cfg(target_os = "macos")]
     {
-        if name == "clang" {
-            run(
-                Path::new("/usr/bin/xcode-select"),
-                ["--install"],
-                Duration::from_secs(60),
-            )?;
-        } else {
-            let brew = find_executable("brew")
-                .context("GCCの導入にはHomebrewが必要です。Zigも利用できます")?;
-            run(&brew, ["install", "gcc"], Duration::from_secs(1800))?;
-        }
-    }
-    #[cfg(windows)]
-    {
-        let winget = find_executable("winget")
-            .context("wingetがありません。アプリインストーラーを導入するかZigを選んでください")?;
-        let package = if name == "clang" {
-            "LLVM.LLVM"
-        } else {
-            "BrechtSanders.WinLibs.POSIX.UCRT"
-        };
+        let brew = find_executable("brew").context("Clang / GCCの導入にはHomebrewが必要です")?;
         run(
-            &winget,
-            [
-                "install",
-                "--exact",
-                "--id",
-                package,
-                "--source",
-                "winget",
-                "--accept-source-agreements",
-                "--accept-package-agreements",
-            ],
+            &brew,
+            ["install", release.package.as_str()],
             Duration::from_secs(1800),
         )?;
     }
@@ -1038,5 +1569,127 @@ mod tests {
         let restored: Settings = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
         assert_eq!(restored.compiler_dir, s.compiler_dir);
         assert_eq!(restored.path_scope, PathScope::User);
+    }
+}
+
+#[cfg(test)]
+mod toolchain_tests {
+    use super::*;
+    use std::net::TcpListener;
+    #[test]
+    fn retries_transient_http_failure_and_validates_download() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for attempt in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 4096];
+                let _ = stream.read(&mut request).unwrap();
+                if attempt == 0 {
+                    stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                } else {
+                    stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello").unwrap();
+                }
+            }
+        });
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("download.zip");
+        let service = Service {
+            client: Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(3))
+                .build()
+                .unwrap(),
+        };
+        service
+            .download(
+                &format!("http://{address}/download"),
+                &output,
+                &format!("{:x}", Sha256::digest(b"hello")),
+                &|_| {},
+            )
+            .unwrap();
+        assert_eq!(fs::read(output).unwrap(), b"hello");
+        server.join().unwrap();
+    }
+    #[test]
+    fn bad_checksum_is_not_installed_or_retried() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request).unwrap();
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello",
+                )
+                .unwrap();
+        });
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("download.zip");
+        let service = Service {
+            client: Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(3))
+                .build()
+                .unwrap(),
+        };
+        let error = service
+            .download(
+                &format!("http://{address}/download"),
+                &output,
+                &"a".repeat(64),
+                &|_| {},
+            )
+            .unwrap_err();
+        assert!(error.to_string().contains("SHA256"));
+        assert!(!output.exists());
+        server.join().unwrap();
+    }
+    #[test]
+    fn finds_tools_in_newly_supplied_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(exe_name("clang"));
+        fs::write(&path, b"fixture").unwrap();
+        assert_eq!(
+            find_in_dirs("clang", &[dir.path().to_path_buf()]).unwrap(),
+            path
+        );
+    }
+}
+
+#[cfg(test)]
+mod upgrade_tests {
+    use super::*;
+    #[test]
+    fn upgrade_preserves_previous_toolchain() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("zig");
+        let staged = root.path().join("new");
+        fs::create_dir(&old).unwrap();
+        fs::write(old.join("version"), "1.0.0").unwrap();
+        fs::create_dir(&staged).unwrap();
+        fs::write(staged.join("version"), "1.1.0").unwrap();
+        promote_toolchain(&staged, &old, Some("1.0.0")).unwrap();
+        assert_eq!(fs::read_to_string(old.join("version")).unwrap(), "1.1.0");
+        let backup = fs::read_dir(root.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .find(|e| e.file_name().to_string_lossy().starts_with("zig-backup-"))
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(backup.path().join("version")).unwrap(),
+            "1.0.0"
+        );
+    }
+    #[test]
+    fn failed_promotion_restores_previous_toolchain() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("zig");
+        fs::create_dir(&old).unwrap();
+        fs::write(old.join("version"), "1.0.0").unwrap();
+        assert!(promote_toolchain(&root.path().join("missing"), &old, Some("1.0.0")).is_err());
+        assert_eq!(fs::read_to_string(old.join("version")).unwrap(), "1.0.0");
     }
 }

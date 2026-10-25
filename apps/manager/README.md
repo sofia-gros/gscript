@@ -8,7 +8,7 @@
 cargo run --locked --manifest-path apps/manager/native/Cargo.toml
 ```
 
-ビルド環境・導入先・PATH・実装範囲は[native/README.md](native/README.md)を参照してください。画面と実機の最終動作確認は未実施です。このアプリ用のGitHub Actionsは追加していません。
+ビルド環境・導入先・PATH・実装範囲は[native/README.md](native/README.md)を参照してください。画面と実機の最終動作確認は未実施です。配布ビルドはmanager.ymlで実行します。
 
 ## HTMLデザイン試作
 
