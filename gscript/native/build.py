@@ -24,9 +24,11 @@ def build_native(entry,root=None,output=None,emit='exe',cc=None,target=None,link
     if check_only:return project,None
     suffix={'exe':'.exe' if windows else '', 'object':'.obj' if windows else '.o','shared':'.dll' if windows else '.dylib' if (target and ('macos' in target or 'darwin' in target) or not target and platform.system()=='Darwin') else '.so','static':'.lib' if windows else '.a','c':'.c'}[emit]
     output=Path(output or Path(out_dir or root/'dist/native')/(entry.stem+suffix)).resolve()
+    selected_compiler=cc or shutil.which('clang') or shutil.which('cc') or shutil.which('gcc')
+    msvc_link=bool(windows and selected_compiler and 'clang' in Path(selected_compiler).stem and (target is None or 'msvc' in target))
     objects=[Path(p).resolve() for p in objects]
     if any(not p.is_file() for p in objects):raise CompileError('native link object does not exist')
-    import_library=output.with_suffix('.dll.a') if windows and emit=='shared' else None
+    import_library=output.with_suffix('.lib' if msvc_link else '.dll.a') if windows and emit=='shared' else None
     destinations=[output,*([Path(header).resolve()] if header else []),*([import_library] if import_library else [])]
     if len(set(destinations))!=len(destinations):raise CompileError('native output/header/import-library paths must differ')
     if any(p.is_dir() for p in destinations):raise CompileError('native output path is a directory')
@@ -37,7 +39,7 @@ def build_native(entry,root=None,output=None,emit='exe',cc=None,target=None,link
     if emit=='c':
         output.parent.mkdir(parents=True,exist_ok=True);output.write_text(code,encoding='utf-8')
     else:
-        compiler=cc or shutil.which('clang') or shutil.which('cc') or shutil.which('gcc')
+        compiler=selected_compiler
         if not compiler:raise CompileError('native compilation requires a GCC-compatible C11 driver (Clang, GCC or Zig); use --cc /path/to/zig')
         compiler=str(compiler)
         driver=[compiler,'cc'] if Path(compiler).stem=='zig' else [compiler]
@@ -55,14 +57,20 @@ def build_native(entry,root=None,output=None,emit='exe',cc=None,target=None,link
             elif emit=='shared':args+=['-shared']+([] if windows else ['-fPIC'])
             if emit not in ('object','static'):args+=[str(p) for p in objects]+['-L'+str(Path(p).resolve()) for p in library_dirs]+['-l'+name for name in dict.fromkeys([*project.links,*links])]+([] if windows else ['-lm'])
             staged_import=temp/'import.dll.a'
-            if import_library:args+=['-Xlinker','--out-implib','-Xlinker',str(staged_import)]
+            if import_library:
+                args+=['-Xlinker','/IMPLIB:'+str(staged_import)] if msvc_link else ['-Xlinker','--out-implib','-Xlinker',str(staged_import)]
             try:result=subprocess.run(args,capture_output=True,text=True,timeout=180)
             except (OSError,subprocess.TimeoutExpired) as error:raise CompileError('native C toolchain failed: '+str(error)) from error
             if result.returncode:raise CompileError('native C compilation/linking failed:\n'+result.stdout+result.stderr)
             if emit=='static':
                 archive=temp/('archive'+suffix)
                 archiver=[compiler,'ar'] if Path(compiler).stem=='zig' else [shutil.which('llvm-ar') or shutil.which('ar') or 'ar']
-                try:packed=subprocess.run([*archiver,'rcs',str(archive),str(binary)],capture_output=True,text=True,timeout=180)
+                archive_args=[*archiver,'rcs',str(archive),str(binary)]
+                if msvc_link:
+                    librarian=shutil.which('llvm-lib') or shutil.which('lib.exe')
+                    if not librarian:raise CompileError('MSVC static libraries require llvm-lib or lib.exe')
+                    archive_args=[librarian,'/OUT:'+str(archive),str(binary)]
+                try:packed=subprocess.run(archive_args,capture_output=True,text=True,timeout=180)
                 except (OSError,subprocess.TimeoutExpired) as error:raise CompileError('native archiver failed: '+str(error)) from error
                 if packed.returncode:raise CompileError('native archiver failed: '+packed.stderr)
                 binary=archive

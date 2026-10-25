@@ -38,7 +38,7 @@ class NativeTypeTests(unittest.TestCase):
         ]
         for source in invalid:
             with self.subTest(source=source),tempfile.TemporaryDirectory() as d:
-                path=Path(d)/'main.gs';path.write_text(source);out=Path(d)/'saved';out.write_text('preserved')
+                path=Path(d)/'main.gs';path.write_text(source,encoding='utf-8');out=Path(d)/'saved';out.write_text('preserved')
                 with patch('subprocess.run',side_effect=AssertionError('GS must reject this before the C compiler')):
                     with self.assertRaises(CompileError):build_native(path,output=out)
                 self.assertEqual(out.read_text(),'preserved')
@@ -67,7 +67,7 @@ class NativeTypeTests(unittest.TestCase):
 class NativeExecutionTests(unittest.TestCase):
     def compile_run(self,source,expected=None):
         with tempfile.TemporaryDirectory() as d:
-            root=Path(d);entry=root/'main.gs';entry.write_text(source)
+            root=Path(d);entry=root/'main.gs';entry.write_text(source,encoding='utf-8')
             _,out=build_native(entry,cc=CC)
             result=subprocess.run([str(out)],capture_output=True,text=True,env={**os.environ,'PATH':''})
             if expected is not None:self.assertEqual((result.returncode,result.stdout),(0,expected),result.stderr)
@@ -167,3 +167,15 @@ println(fixture_apply(address(p),increment),p.X)
                 entry=ROOT/'examples/native'/name
                 _,out=build_native(entry,cc=CC,output=Path(d)/('app.exe' if os.name=='nt' else 'app'))
                 self.assertEqual(subprocess.check_output([str(out)],text=True),expected)
+
+    @unittest.skipUnless(os.name=='nt' and shutil.which('clang'),'Windows Clang/MSVC linker integration')
+    def test_windows_clang_dll_import_library_and_execution(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);entry=root/'api.gs';entry.write_text('export func add(a,b i32) i32 {return a+b}',encoding='utf-8')
+            _,dll=build_native(entry,cc=shutil.which('clang'),emit='shared')
+            self.assertTrue(dll.with_suffix('.lib').is_file())
+            library=ctypes.CDLL(str(dll));library.add.argtypes=[ctypes.c_int32]*2;library.add.restype=ctypes.c_int32
+            try:self.assertEqual(library.add(20,22),42)
+            finally:
+                import _ctypes
+                _ctypes.FreeLibrary(library._handle)

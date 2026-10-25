@@ -147,7 +147,7 @@ export func add(left, right i32) i32 {
 }
 ```
 
-`--emit object|static|shared --header api.h`でC ABIの公開関数とヘッダーを生成します。Windowsのshared出力では、DLLに加え、同じ名前の`.dll.a`インポートライブラリを作成します。利用側では`--link-object /path/to/api.dll.a`等でリンクできます。C、Rustのextern C、C++のC ABI部分等から利用できます。依存GSモジュール内の関数は内部シンボルとして保持し、入口モジュールの公開関数をABIとしてexportします。
+`--emit object|static|shared --header api.h`でC ABIの公開関数とヘッダーを生成します。Windowsのshared出力では、DLLに加え、同じ名前のインポートライブラリ（Zig/MinGWは`.dll.a`、MSVCリンカーを使うClangは`.lib`）を作成します。利用側では`--link-object /path/to/api.dll.a`等でリンクできます。C、Rustのextern C、C++のC ABI部分等から利用できます。依存GSモジュール内の関数は内部シンボルとして保持し、入口モジュールの公開関数をABIとしてexportします。
 
 ## 現在の対応範囲
 

@@ -10,7 +10,7 @@ exports.run = async function () {
   await vscode.extensions.getExtension('sofia-gros.gscript').activate();
   async function waitFor(check) {
     const end = Date.now()+30000;
-    while(Date.now()<end) {if(check()) return;await new Promise(r=>setTimeout(r,100));}
+    while(Date.now()<end) {if(await check()) return;await new Promise(r=>setTimeout(r,100));}
     throw new Error('Timed out waiting for GS diagnostics');
   }
   await waitFor(()=>vscode.languages.getDiagnostics(uri).some(d=>d.source==='gs' && d.message.includes('type mismatch')));
@@ -33,9 +33,13 @@ exports.run = async function () {
   const configUri=vscode.Uri.joinPath(folder,'gsconfig.json');
   await vscode.workspace.fs.writeFile(configUri,Buffer.from('{"backend":"native"}'));
   const nativeEdit=new vscode.WorkspaceEdit();
-  nativeEdit.replace(uri,new vscode.Range(0,0,doc.lineCount,0),'extern "C" func puts(text cptr<cchar>) i32\nvar value i32 = 3\nprintln(value)');
+  nativeEdit.replace(uri,new vscode.Range(0,0,doc.lineCount,0),'extern "C" func puts(text cptr<cchar>) i32\nvar value i32 = i32(3)\nprintln(value)');
   await vscode.workspace.applyEdit(nativeEdit);
-  await waitFor(()=>vscode.languages.getDiagnostics(uri).filter(d=>d.severity===vscode.DiagnosticSeverity.Error).length===0);
+  await waitFor(async()=>{
+    const h=await vscode.commands.executeCommand('vscode.executeHoverProvider',uri,new vscode.Position(2,9));
+    return h.some(x=>x.contents.some(c=>(c.value||'').includes('value: i32')));
+  });
+  assert(!vscode.languages.getDiagnostics(uri).some(d=>d.severity===vscode.DiagnosticSeverity.Error));
   const nativeSymbols=await vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider',uri);
   assert(nativeSymbols.some(s=>s.name==='value'));
   console.log('VSCode installed VSIX: diagnostics, unsaved edits, hover, completion, definition, references, rename and formatting passed');
