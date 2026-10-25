@@ -128,6 +128,81 @@ Windowsでは`"path": "C:\\Users\\Alice\\Tools\\gs-lsp.exe"`のように指定�
 | importがプロジェクト外と判定される | import先を含む共通の親フォルダーをエディターで開く |
 | 外部JS/TSだけ検査に失敗 | Node.js 22/24とプロジェクト内のTypeScript 5.9.3を確認。プロジェクトで`npm install --save-dev typescript@5.9.3`を実行 |
 
+## Zedで「ruffが見つからない」と出る場合
+
+次のエラーは、**Python用Ruff言語サーバー**の実行ファイルが見つからないという意味です。
+
+```text
+Language server ruff:
+'ruff' is not recognized as an internal or external command
+```
+
+GS拡張が登録する言語サーバーは`gs-lsp`です。GS拡張・GSコンパイラはRuffを要求せず、GSを使うためだけにRuffを導入する必要はありません。Pythonファイルも開いている場合、そのPython用言語サーバーのログが同じZed出力に現れることがあります。
+
+### PythonでもRuffを使う
+
+WindowsのPowerShellで、使用するPython環境へRuffを導入します。
+
+```powershell
+py -m pip install --user --upgrade ruff
+py -m ruff --version
+py -c "import sys; print(sys.executable)"
+```
+
+`py`自体が見つからない場合は、導入済みのPythonの実行ファイルを指定してください。`py -m ruff --version`が成功するのにZedで`ruff`が見つからない場合は、ZedのPATHとPython環境が一致していません。
+
+ZedのSettings JSONで、上のコマンドが表示した**実際のPython実行ファイル**と引数を指定できます。既存の`lsp`設定へ統合し、ほかの言語サーバー設定を消さないでください。以下のパスは例です。
+
+```json
+{
+  "lsp": {
+    "ruff": {
+      "binary": {
+        "path": "C:\\Users\\Alice\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "arguments": ["-m", "ruff", "server"]
+      }
+    }
+  }
+}
+```
+
+設定後はZedのコマンドパレットから`editor: restart language server`を実行するか、Zedを再起動します。
+
+### PythonでRuffを使わない
+
+ZedのSettings JSONでPythonのRuffだけを無効化します。これはGS言語サーバーには影響しません。
+
+```json
+{
+  "languages": {
+    "Python": {
+      "language_servers": ["!ruff", "..."]
+    }
+  }
+}
+```
+
+GSファイルでこのエラーが出ているように見える場合は、そのファイルの言語表示が`GS`であることと、カスタム設定でGSへRuffを割り当てていないことを確認してください。`GS Language Server`や`gs-lsp`名の別のエラーが出る場合は、そのログを切り分けて確認します。
+
+## VSCodeの配布・導入はVSIX
+
+GS拡張の配布物は`gscript-v0.6.0.vsix`です。Marketplaceの拡張IDから取得する必要はありません。
+
+手動ではVSCodeの拡張機能ビューの`…` → **Install from VSIX...**から取得済みのファイルを選ぶか、次を実行します。
+
+```powershell
+code --install-extension .\gscript-v0.6.0.vsix --force
+```
+
+管理アプリもGitHub Releaseの同じVSIXを取得し、SHA256SUMSで検証した後、`code --install-extension <取得したVSIXのパス>`で導入します。ユーザーが選んだ独自の拡張保存先へ導入するため、さらに`--extensions-dir`を指定します。利用するときのVSCodeも同じ保存先で起動してください。
+
+```powershell
+code --extensions-dir "D:\GS Tools\extensions\vscode-extensions" --install-extension .\gscript-v0.6.0.vsix --force
+code --extensions-dir "D:\GS Tools\extensions\vscode-extensions" .
+```
+
+保存先とファイル名は実際のものに置き換えてください。すでに通常のVSCodeを起動している場合は、別の拡張保存先で開いたウィンドウと混同しないよう確認します。
+
 ## 機能と検証範囲
 
 GSの診断、ホバー、アウトライン、ローカル・プロパティ補完、定義ジャンプ、参照検索、リネーム、Signature Help、GSモジュールの自動import候補、Lint警告、ドキュメント整形を提供します。コンパイラのAST・シンボル・スコープを再利用し、未保存ファイルも検査します。リネームは編集後の型検査が成功した場合に編集案を返します。外部ライブラリーの定義は参照できますが書き換えません。ワークスペース内に型エラーがある場合は参照検索・リネーム前に修正してください。

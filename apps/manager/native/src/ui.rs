@@ -374,7 +374,13 @@ impl Manager {
                 Button::new(SharedString::from(format!("install-{id}")))
                     .primary()
                     .icon(IconName::ArrowDown)
-                    .label(if record.is_some() {
+                    .label(if id == "vscode" {
+                        if record.is_some() {
+                            "VSIXで更新"
+                        } else {
+                            "VSIXをインストール"
+                        }
+                    } else if record.is_some() {
                         "更新"
                     } else {
                         "インストール"
@@ -384,7 +390,7 @@ impl Manager {
                     ),
             );
         }
-        v_flex().gap_4().p_6().border_1().border_color(cx.theme().border).rounded_lg().bg(cx.theme().popover).child(h_flex().gap_3().child(Icon::new(if id=="compiler"{IconName::SquareTerminal}else{IconName::Frame}).size_6()).child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child(name.to_string()))).child(div().text_sm().text_color(cx.theme().muted_foreground).child(description.to_string())).child(h_flex().gap_6().child(v_flex().child(div().text_xs().text_color(cx.theme().muted_foreground).child("配布版")).child(format!("v{}",release.version))).child(v_flex().child(div().text_xs().text_color(cx.theme().muted_foreground).child("状態")).child(installed))).child(div().text_xs().text_color(cx.theme().muted_foreground).child(location)).when(id=="zed",|d|d.child(div().text_xs().child("Zed → Extensions → Install Dev Extensionで、導入先内のgscript-zedを選択してください。Rust・Gitが必要です。"))).when(id=="vscode",|d|d.child(div().text_xs().child("指定したフォルダーのvscode-extensionsへ導入します。起動時も code --extensions-dir <同じパス> を指定してください。"))).child(buttons).into_any_element()
+        v_flex().gap_4().p_6().border_1().border_color(cx.theme().border).rounded_lg().bg(cx.theme().popover).child(h_flex().gap_3().child(Icon::new(if id=="compiler"{IconName::SquareTerminal}else{IconName::Frame}).size_6()).child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child(name.to_string()))).child(div().text_sm().text_color(cx.theme().muted_foreground).child(description.to_string())).child(h_flex().gap_6().child(v_flex().child(div().text_xs().text_color(cx.theme().muted_foreground).child("配布版")).child(format!("v{}",release.version))).child(v_flex().child(div().text_xs().text_color(cx.theme().muted_foreground).child("状態")).child(installed))).child(div().text_xs().text_color(cx.theme().muted_foreground).child(location)).when(id=="zed",|d|d.child(div().text_xs().child("Zed → Extensions → Install Dev Extensionで、導入先内のgscript-zedを選択してください。Rust・Gitが必要です。"))).when(id=="vscode",|d|d.child(div().text_xs().child("ReleaseのVSIXを取得・検証し、code --install-extensionで指定先のvscode-extensionsへ導入します。起動時も code --extensions-dir <同じパス> を指定してください。"))).child(buttons).into_any_element()
     }
     fn docs_view(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let chapter = &self.chapters[self.chapter];

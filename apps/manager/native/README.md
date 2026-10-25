@@ -84,3 +84,7 @@ cargo test --locked --manifest-path apps/manager/native/Cargo.toml --no-default-
 ## 導入したツールでGSを動かす
 
 インストール後のコマンドは[ネイティブコンパイルと実行](../../../docs/guide/native-build.md)にあります。アプリ内でも「ドキュメント → ネイティブ → ネイティブコンパイルと実行」から同じ内容を参照できます。
+
+## ZedのRuffエラーについて
+
+RuffはPython用の言語サーバーで、GS拡張の依存ではありません。`ruff is not recognized`が出る場合のPythonへの導入・Zedの実行パス設定、使わない場合の無効化は[エディターのトラブルシューティング](../../../docs/editors.md#zedでruffが見つからないと出る場合)を参照してください。VSCode拡張はReleaseのVSIXを取得してインストールします。
