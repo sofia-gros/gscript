@@ -24,6 +24,8 @@ class Settings:
     typescript: Path | None = None
     output: Path | None = None
     libraries: list | None = None
+    backend: str = 'js'
+    native_target: str | None = None
 
 
 def configure(source=None, **overrides):
@@ -36,10 +38,10 @@ def configure(source=None, **overrides):
         try:config=json.loads(config_file.read_text(encoding='utf-8'))
         except (ValueError,UnicodeError) as e:raise CompileError(f'invalid gsconfig.json: {e}') from e
         if not isinstance(config,dict):raise CompileError('gsconfig.json must contain an object')
-        allowed={'entry','outDir','format','minify','tsCompiler','sourcemap','declaration','strictNull','lib'}
+        allowed={'entry','outDir','format','minify','tsCompiler','sourcemap','declaration','strictNull','lib','backend','nativeTarget'}
         unknown=set(config)-allowed
         if unknown:raise CompileError('unknown gsconfig.json option: '+sorted(unknown)[0])
-        for name in ('entry','outDir','format','tsCompiler'):
+        for name in ('entry','outDir','format','tsCompiler','backend','nativeTarget'):
             if name in config and not isinstance(config[name],str):raise CompileError(name+' must be a string')
         for name in ('minify','sourcemap','declaration','strictNull'):
             if name in config and not isinstance(config[name],bool):raise CompileError(name+' must be boolean')
@@ -54,9 +56,10 @@ def configure(source=None, **overrides):
     settings=Settings(entry.resolve(),directory,directory/config.get('outDir','dist'),
                       format=config.get('format','js'),minify=config.get('minify',project),
                       ts_compiler=config.get('tsCompiler','gs'),sourcemap=config.get('sourcemap',False),
-                      declaration=config.get('declaration',False),strict_null=config.get('strictNull',False),libraries=config.get('lib'))
+                      declaration=config.get('declaration',False),strict_null=config.get('strictNull',False),libraries=config.get('lib'),backend=config.get('backend','js'),native_target=config.get('nativeTarget'))
     for key,value in overrides.items():
         if value is not None:setattr(settings,key,value)
+    if settings.backend not in ('js','native'):raise CompileError('backend must be js or native')
     if settings.format not in ('js','mjs','ts'):raise CompileError('format must be js, mjs or ts')
     if settings.ts_compiler not in ('gs','ts'):raise CompileError('tsCompiler must be gs or ts')
     settings.root=Path(settings.root).resolve();settings.out_dir=Path(settings.out_dir).resolve()

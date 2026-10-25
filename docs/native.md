@@ -1,6 +1,6 @@
 # ネイティブ実行とFFI
 
-ソース版で利用できる実験的なAOTバックエンドです。公開済みコンパイラv0.5.0のバイナリには未収録です。
+v0.6.0で配布する実験的なAOTバックエンドです。[コンパイラの導入](installation.md)後、`gs main.gs --backend native`で利用できます。下記の`python -m gscript`はソース版を使う場合の実行例です。
 
 ```text
 GS → ネイティブ型検査 → C11 + GSランタイム → Clang / GCC / Zig → 機械語
@@ -34,7 +34,7 @@ python -m gscript examples/native/hello.gs --backend native --cc C:\Tools\zig\zi
 .\examples\native\dist\native\hello.exe
 ```
 
-`gs`コマンドとして使う場合は仮想環境へ`python -m pip install -e .`でソース版を導入します。公開済みv0.5.0の`gs`と混同しないよう、使用中の実行ファイルを確認してください。
+`gs`コマンドとして使う場合は仮想環境へ`python -m pip install -e .`でソース版を導入します。旧バージョンの`gs`と混同しないよう、使用中の実行ファイルを確認してください。
 
 ## 出力
 
@@ -153,4 +153,16 @@ export func add(left, right i32) i32 {
 
 静的な関数・再帰、変数・定数、if、for、break/continue、基本数値・bool・文字列、C-layout struct/union、型エイリアス、固定長配列、ポインター、関数ポインター、名前付きGS import/export、C/system FFIを対象とします。
 
-async、クロージャ、generics、継承、interface、動的配列、JSの動的オブジェクト、例外、ネイティブ用のエディター統合は今後の対象です。未対応コードはGSコンパイラがエラーにし、JS経路へ自動で切り替えることはありません。npm・Node・DOMを使うコードは[JS / TS経路](typescript-interop.md)で利用できます。
+async、クロージャ、generics、継承、interface、動的配列、JSの動的オブジェクト、例外は今後の対象です。未対応コードはGSコンパイラがエラーにし、JS経路へ自動で切り替えることはありません。npm・Node・DOMを使うコードは[JS / TS経路](typescript-interop.md)で利用できます。
+
+## エディター設定
+
+v0.6.0のVSCode / Zed拡張とLSPを使用します。
+
+```json
+{"backend":"native","entry":"main.gs","nativeTarget":"x86_64-windows-gnu"}
+```
+
+`nativeTarget`は省略できます。`extern "C"` / `extern "system"`を持つ文書はネイティブ構文として自動認識します。その他のネイティブ型を使うプロジェクトではbackendを設定してください。
+
+診断、ホバー、基本的な補完、関数・変数の定義／参照／リネーム、整形をGSのネイティブ型検査器で実行します。編集時にCコンパイラを起動しません。外部C ABIシンボルのリネームは拒否します。型・フィールドの一括リネーム等、JS / TS経路と機能が同一ではありません。

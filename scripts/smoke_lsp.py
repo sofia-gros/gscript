@@ -28,7 +28,7 @@ def main():
         if p.returncode:raise RuntimeError(p.stderr.decode(errors='replace'))
         stream=io.BytesIO(p.stdout);responses=[]
         while (response:=read_message(stream)) is not None:responses.append(response)
-        assert responses[0]['result']['serverInfo']['version']=='0.5.0',responses
+        assert responses[0]['result']['serverInfo']['version']=='0.6.0',responses
         assert 'type mismatch' in responses[1]['params']['diagnostics'][0]['message'],responses
         assert responses[2]['params']['diagnostics']==[],responses
         assert responses[3]['result']['contents']['value']=='value: int',responses

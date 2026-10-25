@@ -27,9 +27,10 @@ class NativeParser(ExtendedParser):
             if self.token.kind!='string':self.fail('extern requires "C" or "system"')
             abi=decode_string(self.take())
             if abi not in ('C','system'):self.fail('unsupported external calling convention: '+abi)
-            self.take('func');name=self.name();params=self.params()
+            self.take('func');token=self.token;name=self.name();params=self.params()
             result=self.type_name() if self.token.kind=='name' or self.at('[') else 'void'
             node=Node('extern',(name,params,result,False,None),line=line);node.abi=abi
+            node.declaration_span=(token.line,token.column,token.line,token.column+len(name))
             return node
         if self.accept('system'):
             if not self.at('func'):self.fail('system must precede a function')
@@ -41,8 +42,19 @@ class NativeParser(ExtendedParser):
         return super().statement()
 
 
-def parse(source):
+def parse(source,positions=False):
     try:
         parser=NativeParser(source)
-        return Node('program',children=parser.program())
+        if positions:
+            for method in ('statement','expression','function','declaration'):
+                original=getattr(parser,method)
+                def located(*args,_original=original,**kwargs):
+                    start=parser.i;node=_original(*args,**kwargs)
+                    if isinstance(node,Node):
+                        first,last=parser.tokens[start],parser.tokens[max(start,parser.i-1)]
+                        node.span=(first.line,first.column,last.line,last.column+len(last.text))
+                    return node
+                setattr(parser,method,located)
+        program=Node('program',children=parser.program());program.tokens=tuple(parser.tokens);program.source_text=source
+        return program
     except RecursionError as error:raise CompileError('source nesting exceeds native compiler capacity') from error

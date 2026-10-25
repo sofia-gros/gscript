@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import re
 import sys
-from urllib.parse import urlparse
+from urllib.parse import urlparse,unquote
 from urllib.request import url2pathname
 
 from . import __version__
@@ -16,11 +16,29 @@ from parser.syntax import tokenize
 KEYWORDS = 'func type struct interface enum extends implements constructor super override static public private protected readonly var const return if else for range switch case default break continue async await new export import true false nil undefined int float float64 number string bool any unknown never void try catch throw typeof instanceof'.split()
 
 
-def path_from_uri(uri):
-    parsed = urlparse(uri)
-    if parsed.scheme != 'file' or parsed.netloc not in ('', 'localhost'):
+class UnknownMethod(LookupError):
+    pass
+
+
+def file_uri_path(uri,windows=False):
+    parsed=urlparse(uri)
+    if parsed.scheme!='file' or parsed.netloc not in ('','localhost') or parsed.query or parsed.fragment:
         raise ValueError('GS language server requires local file URIs')
-    return Path(url2pathname(parsed.path)).resolve()
+    # Decode exactly once, before recognizing a Windows drive. Zed may encode ':' as %3A.
+    decoded=unquote(parsed.path,errors='strict')
+    if windows:
+        import ntpath
+        if re.match(r'^/[A-Za-z]:',decoded):decoded=decoded[1:]
+        decoded=decoded.replace('/','\\')
+        drive,tail=ntpath.splitdrive(decoded)
+        if not drive or not tail.startswith('\\'):raise ValueError('Windows file URI must contain an absolute drive path')
+        return ntpath.normpath(decoded)
+    if not decoded.startswith('/'):raise ValueError('file URI must be absolute')
+    return decoded
+
+
+def path_from_uri(uri):
+    return Path(file_uri_path(uri,windows=sys.platform=='win32')).resolve()
 
 
 def position(text, line, column):
@@ -63,6 +81,7 @@ class Server:
         self.documents = {}
         self.projects = {}
         self.partial_projects = {}
+        self.native_projects = {}
         self.published = set()
         self.roots = []
         self.strict_null = None
@@ -79,25 +98,33 @@ class Server:
         sources = {path_from_uri(uri):doc['text'] for uri,doc in self.documents.items()}
         self.projects = {}
         self.partial_projects = {}
+        self.native_projects = {}
         for uri in self.documents:
             path = path_from_uri(uri)
             project=None
             try:
                 from .build import configure
                 options=configure(path,root=self.root_for(path),strict_null=self.strict_null)
+                from .native import lsp as native_lsp
+                if native_lsp.detect(options,sources[path]):
+                    project=native_lsp.check(path,options,sources);self.native_projects[uri]=project
+                    project.check();continue
                 project=self.session.check(path,options.root,sources=sources,strict_null=options.strict_null,libraries=options.libraries,positions=True)
                 self.projects[uri] = project
                 from .lint import lint_project
                 for warning in lint_project(project):
                     filename=Path(warning.file).resolve()
                     target=next((u for u in self.documents if path_from_uri(u)==filename),filename.as_uri())
-                    text=sources.get(filename,project.modules[filename].source_text)
+                    text=sources.get(filename)
+                    if text is None:
+                        warning_module=project.modules.get(filename)
+                        text=warning_module.source_text if warning_module else ''
                     start=position(text,warning.line,warning.column)
                     item={'range':{'start':start,'end':dict(start,character=start['character']+1)},'severity':2,'source':'gs-lint','code':warning.code,'message':warning.message}
                     if item not in diagnostics.setdefault(target,[]):diagnostics[target].append(item)
             except (CompileError, OSError, UnicodeError, ValueError) as error:
                 project=project or self.session.last_project
-                if project and path in project.modules and project.modules[path].checker:self.partial_projects[uri]=project
+                if project and uri not in self.native_projects and path in project.modules and project.modules[path].checker:self.partial_projects[uri]=project
                 filename = Path(getattr(error,'filename',None) or path).resolve()
                 target = next((open_uri for open_uri in self.documents if path_from_uri(open_uri)==filename),filename.as_uri())
                 text = sources.get(filename, '')
@@ -147,10 +174,13 @@ class Server:
             uri = params['textDocument']['uri'];self.documents.pop(uri,None);self.validate()
         elif method == 'workspace/didChangeWatchedFiles':self.validate()
         elif method in ('textDocument/hover','textDocument/completion','textDocument/documentSymbol','textDocument/definition','textDocument/references','textDocument/prepareRename','textDocument/rename','textDocument/signatureHelp','textDocument/formatting'):
+            if params['textDocument']['uri'] in self.native_projects:
+                from .native.lsp import handle
+                return handle(self,method,params,self.native_projects[params['textDocument']['uri']])
             from .lsp_features import handle_feature
             return handle_feature(self,method,params)
         elif method in ('initialized','$/cancelRequest','$/setTrace'):return None
-        elif not method.startswith('$/'):raise LookupError(method)
+        elif not method.startswith('$/'):raise UnknownMethod(method)
         return None
 
 
@@ -191,7 +221,7 @@ def main(argv=None):
             result=server.handle(message.get('method',''),message.get('params') or {})
             if is_request:send({'jsonrpc':'2.0','id':request_id,'result':result})
         except Exception as error:
-            if is_request:send({'jsonrpc':'2.0','id':request_id,'error':{'code':-32601 if isinstance(error,LookupError) else -32603,'message':str(error)}})
+            if is_request:send({'jsonrpc':'2.0','id':request_id,'error':{'code':-32601 if isinstance(error,UnknownMethod) else -32603,'message':str(error)}})
             else:server.notify('window/logMessage',{'type':1,'message':str(error)})
 
 

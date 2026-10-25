@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 permissions:
   contents: read
 jobs:
@@ -31,6 +32,7 @@ jobs:
               output.write('ZIG_GLOBAL_CACHE_DIR='+str(Path(os.environ['RUNNER_TEMP'])/'gs-zig-global')+'\n')
               output.write('ZIG_LOCAL_CACHE_DIR='+str(Path(os.environ['RUNNER_TEMP'])/'gs-zig-local')+'\n')
       - run: python scripts/ci_command.py python -m unittest discover -s tests -p test_native.py -v
+      - run: python scripts/ci_command.py python -m unittest discover -s tests -p test_v06_lsp.py -v
       - name: Validate Win32 SDK ABI and callbacks
         shell: bash
         run: python scripts/ci_command.py python scripts/test_native_win32.py --cc "$GS_NATIVE_CC"

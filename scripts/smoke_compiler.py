@@ -1,6 +1,7 @@
 """Test a built compiler outside its checkout, including its output and errors."""
 from pathlib import Path
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -76,6 +77,11 @@ def main():
         assert (root/'dist/main.js.map').is_file() and (root/'dist/main.d.ts').is_file()
         run([*compiler, str(modern), '--ts-compiler', 'ts', '--typescript', str(ROOT/'node_modules/typescript'), '--out-dir', str(root/'official')], cwd=root, env=environment)
         assert run(['node', str(root/'official/main.js')], cwd=root).stdout == '6\n'
+        cc=os.environ.get('GS_NATIVE_CC') or shutil.which('clang') or shutil.which('cc') or shutil.which('gcc')
+        if not cc:raise RuntimeError('distributed compiler native backend smoke test requires a C toolchain')
+        native=root/('native-app.exe' if os.name=='nt' else 'native-app')
+        run([*compiler,str(modern),'--backend','native','--cc',cc,'-o',str(native)],cwd=root,env=environment)
+        assert run([str(native)],cwd=root).stdout=='6\n'
         bad = root / 'bad.gs'
         target = root / 'existing.mjs'
         target.write_text('unchanged')

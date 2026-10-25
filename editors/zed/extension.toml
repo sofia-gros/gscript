@@ -1,7 +1,7 @@
 id = "gscript"
 name = "GS / gscript"
 description = "GS syntax highlighting and native compiler language server."
-version = "0.5.0"
+version = "0.6.0"
 schema_version = 1
 authors = ["sofia-gros"]
 repository = "https://github.com/sofia-gros/gscript"

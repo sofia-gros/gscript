@@ -7,6 +7,8 @@ on:
 permissions:
   contents: read
 jobs:
+  native-backend:
+    uses: ./.github/workflows/native.yml
   tests:
     runs-on: ubuntu-22.04
     strategy:
@@ -45,7 +47,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: python -m pip install -r requirements-build.txt
+      - run: python -m pip install -r requirements-build.txt ziglang==0.15.2
       - run: python -m build --no-isolation --outdir release-assets
       - run: python scripts/build_release.py --zipapp --output release-assets
       - name: Test zipapp
@@ -80,7 +82,18 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: python -m pip install -r requirements-build.txt
+      - run: python -m pip install -r requirements-build.txt ziglang==0.15.2
+      - name: Select native code generation toolchain
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import ziglang
+          compiler=Path(ziglang.__file__).parent/('zig.exe' if os.name=='nt' else 'zig')
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as out:
+              out.write('GS_NATIVE_CC='+str(compiler)+'\n')
+              out.write('ZIG_GLOBAL_CACHE_DIR='+str(Path(os.environ['RUNNER_TEMP'])/'gs-zig-global')+'\n')
+              out.write('ZIG_LOCAL_CACHE_DIR='+str(Path(os.environ['RUNNER_TEMP'])/'gs-zig-local')+'\n')
       - run: python scripts/ci_command.py python -m unittest discover -s tests -v
       - run: python scripts/ci_command.py python scripts/build_release.py --native --output release-assets
       - uses: actions/upload-artifact@v4
@@ -90,7 +103,7 @@ jobs:
           if-no-files-found: error
   publish:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [tests, portable, native]
+    needs: [tests, portable, native, native-backend]
     runs-on: ubuntu-22.04
     permissions:
       contents: write

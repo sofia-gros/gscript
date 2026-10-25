@@ -8,10 +8,10 @@ function resolveServer(config, extensionPath, run = cp.execFileSync, platform = 
   if (configured) return {command: configured, args};
   try {
     const version = String(run('gs-lsp', ['--version'], {timeout:5000, windowsHide:true})).trim();
-    if (version !== 'gs-lsp 0.5.0') throw new Error(`Expected gs-lsp 0.5.0, got ${version}`);
+    if (version !== 'gs-lsp 0.6.0') throw new Error(`Expected gs-lsp 0.6.0, got ${version}`);
     return {command:'gs-lsp', args:['--stdio']};
   } catch (_) { /* Fall back to the compiler bundled in the VSIX. */ }
-  const server = path.join(extensionPath, 'server', 'gs-lsp-v0.5.0.pyz');
+  const server = path.join(extensionPath, 'server', 'gs-lsp-v0.6.0.pyz');
   if (!fs.existsSync(server)) throw new Error('The GS extension is incomplete: bundled language server is missing. Reinstall the VSIX.');
   const candidates = platform === 'win32' ? [['py',['-3.12']], ['python',[]], ['python3',[]]] : [['python3',[]], ['python',[]]];
   for (const [command, prefix] of candidates) {
@@ -20,6 +20,6 @@ function resolveServer(config, extensionPath, run = cp.execFileSync, platform = 
       return {command, args:[...prefix, server, '--stdio']};
     } catch (_) { /* Try the next interpreter without opening a shell. */ }
   }
-  throw new Error('GS needs Python 3.12+ for its bundled language server, or the native gs-lsp 0.5.0. Install either, or set gscript.server.path to its absolute path, then run Developer: Reload Window. See the GS extension README for installation instructions.');
+  throw new Error('GS needs Python 3.12+ for its bundled language server, or the native gs-lsp 0.6.0. Install either, or set gscript.server.path to its absolute path, then run Developer: Reload Window. See the GS extension README for installation instructions.');
 }
 module.exports = {resolveServer};

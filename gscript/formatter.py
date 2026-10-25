@@ -4,15 +4,15 @@ from parser.syntax import Node, tokenize, parse_code, CompileError
 
 def semantic(value):
     if isinstance(value,Node):
-        attributes=tuple((name,semantic(getattr(value,name))) for name in ('type_params','type_args','base','implements','field_mods','modifiers','parenthesized','optional_chain') if hasattr(value,name))
+        attributes=tuple((name,semantic(getattr(value,name))) for name in ('type_params','type_args','base','implements','field_mods','modifiers','parenthesized','optional_chain','abi') if hasattr(value,name))
         return value.kind,semantic(value.value),semantic(value.children),attributes
     if isinstance(value,(tuple,list)):return tuple(map(semantic,value))
     if isinstance(value,dict):return tuple((k,semantic(v)) for k,v in value.items())
     return value
 
 
-def format_source(source):
-    original=parse_code(source)
+def format_source(source,parse=parse_code):
+    original=parse(source)
     scanned=tokenize(source)
     events=[(t.line,t.column,t.text,t.kind) for t in scanned if t.text!='<eof>']
     events.extend((line,col,text,'comment') for text,line,col in scanned.comments)
@@ -76,5 +76,5 @@ def format_source(source):
         previous=text
     newline()
     formatted='\n'.join(lines)+'\n'
-    if semantic(original)!=semantic(parse_code(formatted)):raise CompileError('formatter could not preserve the AST; source was not changed')
+    if semantic(original)!=semantic(parse(formatted)):raise CompileError('formatter could not preserve the AST; source was not changed')
     return formatted

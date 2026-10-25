@@ -121,7 +121,7 @@ println("GS Native", len("日本"), "a"=="a",f32(1.5)+f32(2.5),int(3.9),bitOr(u3
 typedef struct { int32_t X,Y; } Point;
 int32_t fixture_apply(Point *p,int32_t (*cb)(int32_t)) { p->X=cb(p->Y); return (int32_t)offsetof(Point,Y); }
 ''')
-            subprocess.run([*DRIVER,'-c',str(fixture),'-o',str(obj)],check=True)
+            subprocess.run([*DRIVER,'-O2','-c',str(fixture),'-o',str(obj)],check=True)
             entry=root/'main.gs';entry.write_text('''type Point struct { X i32; Y i32 }
 extern "C" func fixture_apply(p ptr<Point>, cb func(i32)i32) i32
 func increment(n i32) i32 {return n+i32(1)}

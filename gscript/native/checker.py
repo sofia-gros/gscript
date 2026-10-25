@@ -58,9 +58,10 @@ class Record:
 
 
 class NativeProject:
-    def __init__(self,entry,root=None,bits=64,library=False):
+    def __init__(self,entry,root=None,bits=64,library=False,sources=None,positions=False):
         self.entry=Path(entry).resolve();self.root=Path(root or self.entry.parent).resolve()
         self.bits=bits;self.library=library;self.modules={};self.order=[];self.records={};self.links=[]
+        self.sources={Path(p).resolve():text for p,text in (sources or {}).items()};self.positions=positions;self.bindings=[]
         self.current=None;self.scopes=[];self.result=VOID;self.loop=0;self.counter=0;self.in_function=False
 
     def fail(self,node,message):
@@ -77,7 +78,7 @@ class NativeProject:
         if path in self.modules:return
         if not path.is_relative_to(self.root):raise CompileError('native module is outside project root: '+str(path))
         if path.suffix not in ('.gs','.gos'):raise CompileError('native target only imports GS modules; use extern for C APIs')
-        try:program=parse(path.read_text(encoding='utf-8'))
+        try:program=parse(self.sources[path] if path in self.sources else path.read_text(encoding='utf-8'),positions=self.positions)
         except CompileError as e:e.filename=str(path);raise
         m=Module(path,program,'gs_'+hashlib.sha256(str(path).encode()).hexdigest()[:12]+'_')
         self.modules[path]=m;visiting.add(path)
@@ -129,7 +130,7 @@ class NativeProject:
         if t in (VOID,NIL):self.fail(n,'binding requires a concrete non-void type')
         self.counter+=1
         b=Binding(name,t,c_name or self.current.prefix+'v'+str(self.counter),constant,n,self.current,external)
-        scope[name]=b;return b
+        scope[name]=b;b.depth=len(self.scopes)-1;self.bindings.append(b);return b
 
     def lookup(self,n,name):
         for scope in reversed(self.scopes):

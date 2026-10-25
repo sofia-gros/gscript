@@ -12,7 +12,7 @@
     }
   ],
   "metadata": {
-    "version": "0.5.0",
+    "version": "0.6.0",
     "license": "UNLICENSED",
     "description": "GS tolerant lexical grammar",
     "authors": [

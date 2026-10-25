@@ -242,6 +242,10 @@
     "named": false
   },
   {
+    "type": "cchar",
+    "named": false
+  },
+  {
     "type": "comment",
     "named": true,
     "extra": true
@@ -256,6 +260,10 @@
   },
   {
     "type": "continue",
+    "named": false
+  },
+  {
+    "type": "cptr",
     "named": false
   },
   {
@@ -283,6 +291,18 @@
     "named": false
   },
   {
+    "type": "extern",
+    "named": false
+  },
+  {
+    "type": "f32",
+    "named": false
+  },
+  {
+    "type": "f64",
+    "named": false
+  },
+  {
     "type": "false",
     "named": false
   },
@@ -304,6 +324,22 @@
   },
   {
     "type": "func",
+    "named": false
+  },
+  {
+    "type": "i16",
+    "named": false
+  },
+  {
+    "type": "i32",
+    "named": false
+  },
+  {
+    "type": "i64",
+    "named": false
+  },
+  {
+    "type": "i8",
     "named": false
   },
   {
@@ -332,6 +368,14 @@
   },
   {
     "type": "interface",
+    "named": false
+  },
+  {
+    "type": "isize",
+    "named": false
+  },
+  {
+    "type": "link",
     "named": false
   },
   {
@@ -368,6 +412,10 @@
   },
   {
     "type": "protected",
+    "named": false
+  },
+  {
+    "type": "ptr",
     "named": false
   },
   {
@@ -411,6 +459,10 @@
     "named": false
   },
   {
+    "type": "system",
+    "named": false
+  },
+  {
     "type": "throw",
     "named": false
   },
@@ -431,11 +483,35 @@
     "named": false
   },
   {
+    "type": "u16",
+    "named": false
+  },
+  {
+    "type": "u32",
+    "named": false
+  },
+  {
+    "type": "u64",
+    "named": false
+  },
+  {
+    "type": "u8",
+    "named": false
+  },
+  {
     "type": "undefined",
     "named": false
   },
   {
+    "type": "union",
+    "named": false
+  },
+  {
     "type": "unknown",
+    "named": false
+  },
+  {
+    "type": "usize",
     "named": false
   },
   {
@@ -444,6 +520,10 @@
   },
   {
     "type": "void",
+    "named": false
+  },
+  {
+    "type": "winfunc",
     "named": false
   },
   {

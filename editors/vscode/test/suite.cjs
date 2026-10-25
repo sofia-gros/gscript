@@ -30,5 +30,13 @@ exports.run = async function () {
   assert(rename && rename.size>0);
   const formatting = await vscode.commands.executeCommand('vscode.executeFormatDocumentProvider',uri,{tabSize:2,insertSpaces:true});
   assert(Array.isArray(formatting));
+  const configUri=vscode.Uri.joinPath(folder,'gsconfig.json');
+  await vscode.workspace.fs.writeFile(configUri,Buffer.from('{"backend":"native"}'));
+  const nativeEdit=new vscode.WorkspaceEdit();
+  nativeEdit.replace(uri,new vscode.Range(0,0,doc.lineCount,0),'extern "C" func puts(text cptr<cchar>) i32\nvar value i32 = 3\nprintln(value)');
+  await vscode.workspace.applyEdit(nativeEdit);
+  await waitFor(()=>vscode.languages.getDiagnostics(uri).filter(d=>d.severity===vscode.DiagnosticSeverity.Error).length===0);
+  const nativeSymbols=await vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider',uri);
+  assert(nativeSymbols.some(s=>s.name==='value'));
   console.log('VSCode installed VSIX: diagnostics, unsaved edits, hover, completion, definition, references, rename and formatting passed');
 };

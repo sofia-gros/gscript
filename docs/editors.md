@@ -1,26 +1,26 @@
 # VSCode・Zedへの導入
 
-対象はGSコンパイラ・言語サーバーv0.5.0です。
+対象はGSコンパイラ・言語サーバーv0.6.0です。
 
-[v0.5.0版のダウンロード](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.5.0)
+[v0.6.0版のダウンロード](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.6.0)
 
 ## VSCode
 
 ### インストール
 
 1. VSCode 1.85以降を使用します。
-2. [Python公式サイト](https://www.python.org/downloads/)からPython 3.12以降をインストールします。VSCodeを終了し、起動し直してください。既にネイティブ版`gs-lsp 0.5.0`を使っている場合、Pythonは不要です。
-3. v0.5.0版Releaseの`gscript-v0.5.0.vsix`をダウンロードします。
+2. [Python公式サイト](https://www.python.org/downloads/)からPython 3.12以降をインストールします。VSCodeを終了し、起動し直してください。既にネイティブ版`gs-lsp 0.6.0`を使っている場合、Pythonは不要です。
+3. v0.6.0版Releaseの`gscript-v0.6.0.vsix`をダウンロードします。
 4. VSCodeの拡張機能ビューを開き、右上の「…」→「VSIXからのインストール…」で選択します。
 5. 「Developer: Reload Window」で再読み込みし、プロジェクトのフォルダーを開きます。
 
 `code`コマンドが利用できる環境では、ダウンロードしたディレクトリーで次も使えます。既存拡張から更新する場合も同じ手順です。
 
 ```sh
-code --install-extension ./gscript-v0.5.0.vsix --force
+code --install-extension ./gscript-v0.6.0.vsix --force
 ```
 
-VSIXには言語サーバーのPython zipappを同梱しています。起動順は、ユーザー指定の実行ファイル → PATH上の`gs-lsp 0.5.0` → Python 3.12以降による同梱サーバーです。ソースリポジトリーやコンパイラの別途インストールは不要です。
+VSIXには言語サーバーのPython zipappを同梱しています。起動順は、ユーザー指定の実行ファイル → PATH上の`gs-lsp 0.6.0` → Python 3.12以降による同梱サーバーです。ソースリポジトリーやコンパイラの別途インストールは不要です。
 
 ### 動作確認
 
@@ -60,7 +60,7 @@ Windowsのネイティブ版:
 ```json
 {
   "gscript.server.path": "/absolute/path/to/python3",
-  "gscript.server.args": ["/absolute/path/to/gs-lsp-v0.5.0.pyz", "--stdio"]
+  "gscript.server.args": ["/absolute/path/to/gs-lsp-v0.6.0.pyz", "--stdio"]
 }
 ```
 
@@ -85,13 +85,13 @@ git --version
 
 ### インストール
 
-1. v0.5.0版Releaseから`gscript-zed-v0.5.0.zip`を取得して展開します。
+1. v0.6.0版Releaseから`gscript-zed-v0.6.0.zip`を取得して展開します。
 2. 展開した`gscript-zed`フォルダーを、削除しない場所へ移動します。開発拡張はこのフォルダーを参照し続けます。
 3. Zedのコマンドパレットで`zed: extensions`を開き、**Install Dev Extension**を選びます。
 4. `extension.toml`と`Cargo.toml`がある`gscript-zed`フォルダーを選択します。ZIP自体や、その1つ上のフォルダーは選びません。
 5. ビルド完了後、GSプロジェクトのフォルダーを開き、`hello.gs`を開きます。言語表示が`GS`になり、キーワード等が色分けされます。
 
-初版を導入済みの場合は、Extensionsから古い開発拡張を削除してからv0.5.0版のフォルダーを選び直してください。v0.5.0版はZed Extension API 0.6を使います。APIの対応範囲は[Zed公式互換表](https://github.com/zed-industries/zed/tree/main/crates/extension_api#compatible-zed-versions)を参照してください。
+初版を導入済みの場合は、Extensionsから古い開発拡張を削除してからv0.6.0版のフォルダーを選び直してください。v0.6.0版はZed Extension API 0.6を使います。APIの対応範囲は[Zed公式互換表](https://github.com/zed-industries/zed/tree/main/crates/extension_api#compatible-zed-versions)を参照してください。
 
 ### 言語サーバー
 
@@ -113,7 +113,7 @@ git --version
 }
 ```
 
-Windowsでは`"path": "C:\\Users\\Alice\\Tools\\gs-lsp.exe"`のように指定します。Intel Mac・Linux ARM等では、Python 3.12以降の実行ファイルを`path`に、`["/absolute/path/to/gs-lsp-v0.5.0.pyz", "--stdio"]`を`arguments`に指定してください。
+Windowsでは`"path": "C:\\Users\\Alice\\Tools\\gs-lsp.exe"`のように指定します。Intel Mac・Linux ARM等では、Python 3.12以降の実行ファイルを`path`に、`["/absolute/path/to/gs-lsp-v0.6.0.pyz", "--stdio"]`を`arguments`に指定してください。
 
 ## エラーの確認方法
 
@@ -135,3 +135,9 @@ GSの診断、ホバー、アウトライン、ローカル・プロパティ補
 gsconfig.jsonのstrictNull/libを共用します。VSCodeのgscript.strictNullは既定nullで設定へ追従し、true/falseで上書きできます。初回の外部型読み取りには時間がかかります。外部型キャッシュを.gs-cacheへ保存する場合があります。
 
 CIは実際のVSIXをExtension Hostへインストールし、同梱サーバーとの接続を検査します。Zed用Rust/WASI2コンポーネント、Tree-sitterの生成・解析・クエリー・WASM、3OSのLSP実行も検査します。Zedの開発拡張導入は上記公式手順でローカル再ビルドされます。同梱WASMをZIPから直接インストールする機能ではありません。GUIによるZed導入の自動試験とは区別します。
+
+## v0.6.0の修正
+
+Zed / Windowsの`file:///a%3A/Project/...`形式のURIを、ドライブを保持した絶対パスへ変換します。`documentSymbol`の内部パスエラーを未対応メソッドの`-32601`として返す分類も修正しました。ZedはPATH上のサーバーのバージョンを確認し、一致しなければ同梱バージョンに対応するReleaseを取得します。自動取得した実行ファイルは絶対パスで起動します。
+
+ネイティブプロジェクトは`gsconfig.json`の`backend: "native"`を設定します。[対応範囲](native.md#エディター設定)を参照してください。明示的に`binary.path`へ古いLSPを設定している場合は、その設定もv0.6.0へ更新します。
