@@ -100,6 +100,10 @@ pub fn installed_version(name: &str, output: &str) -> Option<String> {
             .captures(first)
             .map(|c| c[1].into());
     }
+    // macOS ships a gcc command that is actually Apple Clang.
+    if name == "gcc" && first.to_ascii_lowercase().contains("clang") {
+        return None;
+    }
     Regex::new(r"[0-9]+(?:\.[0-9]+)+")
         .unwrap()
         .find_iter(first)
@@ -199,6 +203,10 @@ mod tests {
         assert_eq!(
             installed_version("gcc", "gcc.exe (Rev5, Built by MSYS2 project) 15.2.0"),
             Some("15.2.0".into())
+        );
+        assert_eq!(
+            installed_version("gcc", "Apple clang version 16.0.0 (clang-1600.0.1)"),
+            None
         );
         assert_eq!(newer_version("0.16.0", "0.15.2"), Some(false));
         assert_eq!(newer_version("14.0.0", "15.2.0"), Some(true));

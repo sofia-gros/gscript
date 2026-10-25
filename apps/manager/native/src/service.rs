@@ -645,6 +645,7 @@ impl Service {
                     .into(),
             );
             let installed = install_system_compiler(name, &release);
+            installed.with_context(|| format!("{name}の導入処理に失敗しました"))?;
             // Windows installers update registry PATH, not the environment of this running process.
             let inspected = self.inspect_toolchain(name, settings);
             let tool = inspected.executable.is_some().then_some(inspected);
@@ -655,14 +656,12 @@ impl Service {
                         tool.version
                     ));
                 }
-                installed.with_context(|| format!("{name}の導入処理に失敗しました"))?;
                 return Ok(format!(
                     "{name}の導入は完了しましたが、SDK / ライブラリを含むビルド検証は未完了です。{}\n実行ファイル: {}",
                     tool.version,
                     tool.executable.unwrap().display()
                 ));
             }
-            installed.with_context(|| format!("{name}の導入処理に失敗しました"))?;
             bail!(
                 "導入処理は終了しましたが{name}を検出できません。パッケージ管理ツールの出力とインストール先を確認してください。"
             )
@@ -1244,6 +1243,35 @@ fn expand_windows_environment(value: &str) -> std::ffi::OsString {
     }
 }
 pub fn find_executable(name: &str) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    if ["clang", "gcc"].contains(&name) {
+        // Homebrew llvm is keg-only; GCC uses a major-version suffix.
+        if let Some(brew) = find_in_dirs("brew", &executable_dirs()) {
+            let formula = if name == "clang" { "llvm" } else { "gcc" };
+            if let Ok(prefix) = run(&brew, ["--prefix", formula], Duration::from_secs(15)) {
+                let bin = Path::new(prefix.trim()).join("bin");
+                if let Some(exe) = find_in_dirs(name, &[bin.clone()]) {
+                    return Some(exe);
+                }
+                if name == "gcc" {
+                    let mut candidates: Vec<_> = fs::read_dir(&bin)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|entry| entry.ok())
+                        .filter_map(|entry| {
+                            let filename = entry.file_name().to_string_lossy().into_owned();
+                            let major: u32 = filename.strip_prefix("gcc-")?.parse().ok()?;
+                            entry.path().is_file().then_some((major, entry.path()))
+                        })
+                        .collect();
+                    candidates.sort_by_key(|(major, _)| *major);
+                    if let Some((_, exe)) = candidates.pop() {
+                        return Some(exe);
+                    }
+                }
+            }
+        }
+    }
     find_in_dirs(name, &executable_dirs())
 }
 fn find_in_dirs(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
