@@ -1,5 +1,7 @@
 # CLI
 
+> このページはJS / TS経路のガイドです。言語全体は[実行モデル](execution-models.md)、ソース版のネイティブ機能は[Native](native.md)を参照してください。
+
 ```sh
 gs .                         # main.gs/main.gosをdistへ、既定はminify JS
 gs main.gs                   # dist/main.jsへ可読JS、依存も出力

@@ -1,5 +1,7 @@
 # コンパイラv0.5.0のインストール
 
+> このページはJS / TS経路のガイドです。言語全体は[実行モデル](execution-models.md)、ソース版のネイティブ機能は[Native](native.md)を参照してください。
+
 コンパイラは[GS v0.5.0](https://github.com/sofia-gros/gscript/releases/tag/v0.5.0)から取得します。`releases/latest`はエディター拡張を指す場合があるため、コンパイラの導入には使いません。エディター拡張の導入は[別の手順](editors.md)です。
 
 ## 配布物を選ぶ

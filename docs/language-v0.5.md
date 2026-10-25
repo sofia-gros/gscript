@@ -1,5 +1,7 @@
 # GS v0.5
 
+> このページはJS / TS経路のガイドです。言語全体は[実行モデル](execution-models.md)、ソース版のネイティブ機能は[Native](native.md)を参照してください。
+
 GSはGo風構文をJavaScript ES2022へ変換する静的型付き言語です。GSの構文、スコープ、型、モジュールはGSコンパイラが検査します。外部の型定義はTypeScript APIで読み取ります。
 
 ```go

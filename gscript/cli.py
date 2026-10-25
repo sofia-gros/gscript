@@ -15,6 +15,14 @@ def main(argv=None, default_source=None):
         return command(argv)
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source',nargs='?',type=Path,default=default_source or Path('.'))
+    parser.add_argument('--backend',choices=('js','native'),default='js')
+    parser.add_argument('--emit',choices=('exe','object','shared','static','c'))
+    parser.add_argument('--cc',type=Path)
+    parser.add_argument('--target')
+    parser.add_argument('--link',action='append',default=[])
+    parser.add_argument('--header',type=Path)
+    parser.add_argument('--library-dir',action='append',type=Path,default=[])
+    parser.add_argument('--link-object',action='append',type=Path,default=[])
     parser.add_argument('--format',choices=('js','mjs','ts'))
     output=parser.add_mutually_exclusive_group()
     output.add_argument('-o','--output',type=Path)
@@ -36,6 +44,13 @@ def main(argv=None, default_source=None):
     try:
         from .build import configure,build
         if args.output and args.source.is_file() and args.output.resolve()==args.source.resolve():raise CompileError('output must not overwrite the source file')
+        if args.backend=='native':
+            if args.format or args.ts_compiler or args.sourcemap or args.declaration or args.minify is not None:raise CompileError('JS/TS output options are not applicable to the native backend')
+            from .native.build import build_native
+            settings=configure(args.source,root=args.root,out_dir=args.out_dir,library_dirs=args.library_dir,objects=args.link_object)
+            build_native(settings.entry,root=settings.root,output=args.output,emit=args.emit or 'exe',cc=args.cc,target=args.target,links=args.link,header=args.header,check_only=args.check,out_dir=args.out_dir,library_dirs=args.library_dir,objects=args.link_object)
+            return 0
+        if args.emit or args.cc or args.target or args.link or args.header or args.library_dir or args.link_object:raise CompileError('native toolchain options require --backend native')
         inferred=args.output.suffix[1:] if args.output else None
         if inferred and inferred not in ('js','mjs','ts'):parser.error('output extension must be .js, .mjs or .ts')
         if inferred and args.format and inferred!=args.format:parser.error('output extension must match --format')
