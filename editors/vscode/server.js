@@ -5,21 +5,31 @@ const fs = require('fs');
 function resolveServer(config, extensionPath, run = cp.execFileSync, platform = process.platform) {
   const configured = config.get('server.path', '').trim();
   const args = config.get('server.args', ['--stdio']);
-  if (configured) return {command: configured, args};
+  if (configured) {
+    const probeArgs = args.filter(arg => arg !== '--stdio').concat('--version');
+    try {
+      const version = String(run(configured, probeArgs, {timeout:10000, windowsHide:true, stdio:['ignore','pipe','pipe']})).trim();
+      if (version !== 'gs-lsp 0.6.1') throw new Error(`Expected gs-lsp 0.6.1, got ${version}`);
+    } catch (error) {
+      const detail = String(error.stderr || error.message || error).trim().slice(-2500);
+      throw new Error(`Configured GS language server cannot start: ${detail}. If this mentions PYI or VCRUNTIME140.dll extraction, the native executable failed before the language server started. Re-extract the entire server folder including _internal from a repaired build, or clear gscript.server.path and reset gscript.server.args to ["--stdio"] to use the bundled server with Python 3.12+. See https://github.com/sofia-gros/gscript/blob/main/docs/windows-startup.md.`);
+    }
+    return {command: configured, args};
+  }
   try {
     const version = String(run('gs-lsp', ['--version'], {timeout:5000, windowsHide:true})).trim();
-    if (version !== 'gs-lsp 0.6.0') throw new Error(`Expected gs-lsp 0.6.0, got ${version}`);
+    if (version !== 'gs-lsp 0.6.1') throw new Error(`Expected gs-lsp 0.6.1, got ${version}`);
     return {command:'gs-lsp', args:['--stdio']};
   } catch (_) { /* Fall back to the compiler bundled in the VSIX. */ }
-  const server = path.join(extensionPath, 'server', 'gs-lsp-v0.6.0.pyz');
+  const server = path.join(extensionPath, 'server', 'gs-lsp-v0.6.1.pyz');
   if (!fs.existsSync(server)) throw new Error('The GS extension is incomplete: bundled language server is missing. Reinstall the VSIX.');
-  const candidates = platform === 'win32' ? [['py',['-3.12']], ['python',[]], ['python3',[]]] : [['python3',[]], ['python',[]]];
+  const candidates = platform === 'win32' ? [['py',['-3']], ['python',[]], ['python3',[]]] : [['python3',[]], ['python',[]]];
   for (const [command, prefix] of candidates) {
     try {
       run(command, [...prefix, '-c', 'import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)'], {timeout:5000, windowsHide:true});
       return {command, args:[...prefix, server, '--stdio']};
     } catch (_) { /* Try the next interpreter without opening a shell. */ }
   }
-  throw new Error('GS needs Python 3.12+ for its bundled language server, or the native gs-lsp 0.6.0. Install either, or set gscript.server.path to its absolute path, then run Developer: Reload Window. See the GS extension README for installation instructions.');
+  throw new Error('GS needs Python 3.12+ for its bundled language server, or the native gs-lsp 0.6.1. Install either, or set gscript.server.path to its absolute path, then run Developer: Reload Window. See the GS extension README for installation instructions.');
 }
 module.exports = {resolveServer};

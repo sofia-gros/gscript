@@ -91,7 +91,7 @@ class LanguageServerTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr)
         stream=io.BytesIO(result.stdout);responses=[]
         while (message:=read_message(stream)) is not None:responses.append(message)
-        self.assertEqual(responses[0]['result']['serverInfo']['version'],'0.6.0')
+        self.assertEqual(responses[0]['result']['serverInfo']['version'],'0.6.1')
         self.assertFalse(any(d['severity']==1 for d in responses[1]['params']['diagnostics']))
         self.assertEqual(responses[2]['error']['code'],-32601)
         self.assertIsNone(responses[3]['result'])

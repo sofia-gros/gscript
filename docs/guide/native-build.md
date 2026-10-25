@@ -159,6 +159,8 @@ Linux / macOSで作成した場合も、この`.exe`を通常実行する場所�
 
 ## 動かないときの確認
 
+`gs --version`の時点で`Failed to extract VCRUNTIME140.dll`が出る場合は、GSコンパイラの起動前にEXEの展開が失敗しています。Zigの選択やGSソースのエラーではありません。[Windows起動エラーの対処](../windows-startup.md)に従ってPython版で回避するか、修正版をビルドしてください。
+
 | 症状 | 確認すること |
 | --- | --- |
 | `gs`が見つからない | 新しいターミナルを開く。管理アプリの導入先にあるbin/gsまたはbin/gs.cmdを絶対パスで実行 |

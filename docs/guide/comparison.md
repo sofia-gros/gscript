@@ -183,7 +183,7 @@ try {
 | stringの長さ | UTF-16コード単位 | UTF-8バイト数 |
 | 配列 | 可変JS Array | 固定長[N]Tの保存領域 |
 | ポインター | 言語のCポインターなし | ptr / cptr、寿命は利用側で管理 |
-| Generics・async・継承 | 対応 | v0.6.0未対応 |
+| Generics・async・継承 | 対応 | v0.6.1未対応 |
 | 外部ライブラリ | JS / TS / npm | C / system ABI |
 
 [型とオブジェクト](structs.md)に継承・interface・Generics・enum等の例、[文と式](control-flow.md)に制御文・例外・モジュール構文の一覧があります。

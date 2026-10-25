@@ -319,7 +319,7 @@ console.log(label, twice(21), p.Greet())
             self.assertIn('line 2:13', result.stderr)
             self.assertIn('console.log(@)', result.stderr)
             self.assertIn('^', result.stderr)
-        self.assertEqual(self.cli('--version').stdout, 'gscript 0.6.0\n')
+        self.assertEqual(self.cli('--version').stdout, 'gscript 0.6.1\n')
 
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@
   "name": "gscript",
   "displayName": "GS / gscript",
   "description": "GS compiler diagnostics, completion, definition, references, rename, signatures and formatting.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "sofia-gros",
   "engines": {
     "vscode": "^1.85.0"
@@ -59,7 +59,7 @@
         "gscript.server.path": {
           "type": "string",
           "default": "",
-          "description": "Optional native server or Python executable path. Empty: detect gs-lsp 0.6.0, otherwise run the bundled server with Python 3.12+."
+          "description": "Optional native server or Python executable path. Empty: detect gs-lsp 0.6.1, otherwise run the bundled server with Python 3.12+."
         },
         "gscript.server.args": {
           "type": "array",

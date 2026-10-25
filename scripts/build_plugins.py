@@ -32,23 +32,33 @@ def main():
             target=output/f'gs-lsp-v{__version__}.pyz'
             zipapp.create_archive(staging,target,interpreter='/usr/bin/env python3',compressed=True)
         subprocess.run([sys.executable,str(ROOT/'scripts/smoke_lsp.py'),str(target)],check=True)
+        if output==(ROOT/'editors/vscode/server').resolve():
+            # Do not accidentally ship stale bundled servers in a locally rebuilt VSIX.
+            for old in output.glob('gs-lsp-v*.pyz'):
+                if old!=target:old.unlink()
     if args.native:
         build=ROOT/'build/lsp'
-        subprocess.run([sys.executable,'-m','PyInstaller','--clean','--noconfirm','--onefile','--name','gs-lsp','--paths',str(ROOT),
+        windows=sys.platform=='win32'
+        subprocess.run([sys.executable,'-m','PyInstaller','--clean','--noconfirm','--onedir' if windows else '--onefile','--noupx','--name','gs-lsp','--paths',str(ROOT),
                         '--add-data',str(ROOT/'gscript/declarations.cjs')+__import__('os').pathsep+'gscript',
                         '--distpath',str(build/'bin'),'--workpath',str(build/'work'),'--specpath',str(build),str(ROOT/'scripts/lsp_entry.py')],check=True)
-        executable=build/'bin'/('gs-lsp.exe' if sys.platform=='win32' else 'gs-lsp')
+        bundle=build/'bin'/'gs-lsp' if windows else build/'bin'
+        executable=bundle/('gs-lsp.exe' if windows else 'gs-lsp')
         subprocess.run([sys.executable,str(ROOT/'scripts/smoke_lsp.py'),str(executable)],check=True)
         system={'Linux':'linux','Darwin':'macos','Windows':'windows'}[platform.system()]
         arch={'AMD64':'x86_64','aarch64':'arm64'}.get(platform.machine(),platform.machine())
         name=f'gs-lsp-v{__version__}-{system}-{arch}'
         with tempfile.TemporaryDirectory() as directory:
             folder=Path(directory)/name;folder.mkdir()
-            shutil.copy2(executable,folder/executable.name)
+            if windows:
+                shutil.copytree(bundle,folder,dirs_exist_ok=True)
+            else:
+                shutil.copy2(executable,folder/executable.name)
             shutil.copy2(ROOT/'docs/editors.md',folder/'README.md')
             if system=='windows':
                 with zipfile.ZipFile(output/(name+'.zip'),'w',zipfile.ZIP_DEFLATED) as archive:
-                    for p in folder.iterdir():archive.write(p,name+'/'+p.name)
+                    for p in folder.rglob('*'):
+                        if p.is_file():archive.write(p,str(Path(name)/p.relative_to(folder)))
             else:
                 with tarfile.open(output/(name+'.tar.gz'),'w:gz') as archive:archive.add(folder,arcname=name)
     if args.editors:

@@ -29,14 +29,16 @@ def build_zipapp(output):
 
 def build_native(output):
     build = ROOT / 'build/native'
+    windows = sys.platform == 'win32'
     subprocess.run([sys.executable, '-m', 'PyInstaller', '--clean', '--noconfirm',
-                    '--onefile', '--name', 'gs', '--paths', str(ROOT),
+                    '--onedir' if windows else '--onefile', '--noupx', '--name', 'gs', '--paths', str(ROOT),
                     '--add-data', str(ROOT / 'gscript/typescript_bridge.cjs') + os.pathsep + 'gscript',
                     '--add-data', str(ROOT / 'gscript/declarations.cjs') + os.pathsep + 'gscript',
                     '--add-data', str(ROOT / 'gscript/compile_ts.cjs') + os.pathsep + 'gscript',
                     '--distpath', str(build / 'bin'), '--workpath', str(build / 'work'),
                     '--specpath', str(build), str(ROOT / 'scripts/compiler_entry.py')], check=True)
-    executable = build / 'bin' / ('gs.exe' if sys.platform == 'win32' else 'gs')
+    bundle = build / 'bin' / 'gs' if windows else build / 'bin'
+    executable = bundle / ('gs.exe' if windows else 'gs')
     # Exercise the exact standalone executable before packaging it.
     subprocess.run([sys.executable, str(ROOT / 'scripts/smoke_compiler.py'), str(executable)], check=True)
     system = {'Darwin': 'macos', 'Windows': 'windows', 'Linux': 'linux'}[platform.system()]
@@ -45,7 +47,11 @@ def build_native(output):
     with tempfile.TemporaryDirectory() as directory:
         staging = Path(directory) / base
         staging.mkdir()
-        shutil.copy2(executable, staging / executable.name)
+        if windows:
+            # Include _internal and its DLLs: copying only the EXE creates a broken installation.
+            shutil.copytree(bundle, staging, dirs_exist_ok=True)
+        else:
+            shutil.copy2(executable, staging / executable.name)
         shutil.copy2(ROOT / 'readme.md', staging / 'README.md')
         shutil.copytree(ROOT / 'docs', staging / 'docs')
         if system == 'windows':

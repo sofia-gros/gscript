@@ -82,14 +82,14 @@ impl Default for Releases {
     fn default() -> Self {
         Self {
             compiler: Release {
-                version: "0.6.0".into(),
-                tag: "v0.6.0".into(),
-                notes: include_str!("../../../../docs/releases/v0.6.0.md").into(),
+                version: "0.6.1".into(),
+                tag: "v0.6.1".into(),
+                notes: include_str!("../../../../docs/releases/v0.6.1.md").into(),
             },
             plugins: Release {
-                version: "0.6.0".into(),
-                tag: "plugin-v0.6.0".into(),
-                notes: include_str!("../../../../docs/releases/plugin-v0.6.0.md").into(),
+                version: "0.6.1".into(),
+                tag: "plugin-v0.6.1".into(),
+                notes: include_str!("../../../../docs/releases/plugin-v0.6.1.md").into(),
             },
         }
     }

@@ -405,7 +405,7 @@ impl Manager {
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child(format!(
-                    "{} / {} · v0.6.0 · オフライン",
+                    "{} / {} · v0.6.1 · オフライン",
                     chapter.group, chapter.title
                 )),
         );

@@ -40,7 +40,7 @@ flowchart LR
 | 実行環境 | Node.js・ブラウザー等 | 対象OSとリンクしたライブラリ |
 | ライブラリ | JavaScript・TypeScript・npm・JSDoc・`.d.ts` | C ABI、固定幅型、ポインター、コールバック、OS API |
 | GSの検査 | GSコンパイラ | GSコンパイラのネイティブ型検査 |
-| 配布状況 | [v0.6.0で配布](https://github.com/sofia-gros/gscript/releases/tag/v0.6.0) | v0.6.0の実験的バックエンド |
+| 配布状況 | [v0.6.1で配布](https://github.com/sofia-gros/gscript/releases/tag/v0.6.1) | v0.6.1の実験的バックエンド |
 
 ネイティブ出力には、文字列・出力・数値エラー処理等を担う小さなGSランタイムが静的に組み込まれます。実行にNode.js・Python・JSエンジンは必要ありません。ウィンドウ・イベントループ・描画機能は、C ABIを使うライブラリとして実装する設計です。
 
@@ -74,7 +74,7 @@ Node.js・TypeScript・npmとの既存互換性はJS / TS経路で維持しま�
 
 ## ネイティブで使う
 
-ネイティブ機能はv0.6.0のコンパイラから利用できます。コード生成にはGCC互換のC11ドライバー（Clang・GCC・Zig）が必要です。ソース版から使う場合はPython 3.12以降も必要です。
+ネイティブ機能はv0.6.1のコンパイラから利用できます。コード生成にはGCC互換のC11ドライバー（Clang・GCC・Zig）が必要です。ソース版から使う場合はPython 3.12以降も必要です。
 
 ```sh
 git clone https://github.com/sofia-gros/gscript.git
@@ -109,7 +109,7 @@ gs fmt
 gs watch
 ```
 
-[VSCode・Zed・LSP v0.6.0](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.6.0)では、ハイライト、診断、定義・参照、リネーム、補完、Signature Help、整形を提供します。エディターは`gsconfig.json`の`backend`を共用し、ネイティブ構文の診断・基本的な編集機能にも対応します。lint/fmt/watchのCLIはJS / TS用です。[Nativeのエディター設定](docs/native.md#エディター設定)を参照してください。
+[VSCode・Zed・LSP v0.6.1](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.6.1)では、ハイライト、診断、定義・参照、リネーム、補完、Signature Help、整形を提供します。エディターは`gsconfig.json`の`backend`を共用し、ネイティブ構文の診断・基本的な編集機能にも対応します。lint/fmt/watchのCLIはJS / TS用です。[Nativeのエディター設定](docs/native.md#エディター設定)を参照してください。
 
 ## 管理アプリ
 

@@ -2,7 +2,7 @@
 
 **最初に動かす場合:** [Clang・GCC・Zigごとのコンパイルと実行手順](guide/native-build.md)を参照してください。Windows PowerShell、Linux / macOS、任意の導入先とPATHの扱いを説明しています。
 
-v0.6.0で配布する実験的なAOTバックエンドです。[コンパイラの導入](installation.md)後、`gs main.gs --backend native`で利用できます。下記の`python -m gscript`はソース版を使う場合の実行例です。
+v0.6.1で配布する実験的なAOTバックエンドです。[コンパイラの導入](installation.md)後、`gs main.gs --backend native`で利用できます。下記の`python -m gscript`はソース版を使う場合の実行例です。
 
 ```text
 GS → ネイティブ型検査 → C11 + GSランタイム → Clang / GCC / Zig → 機械語
@@ -159,7 +159,7 @@ async、クロージャ、generics、継承、interface、動的配列、JSの�
 
 ## エディター設定
 
-v0.6.0のVSCode / Zed拡張とLSPを使用します。
+v0.6.1のVSCode / Zed拡張とLSPを使用します。
 
 ```json
 {"backend":"native","entry":"main.gs","nativeTarget":"x86_64-windows-gnu"}

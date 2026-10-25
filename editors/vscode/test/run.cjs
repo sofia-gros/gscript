@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 const cp = require('child_process');
 const packaged = fs.mkdtempSync(path.join(os.tmpdir(), 'gs packaged extension '));
-cp.execFileSync(process.env.GS_PYTHON || 'python', ['-c', 'import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', path.resolve(__dirname,'../gscript-0.6.0.vsix'), packaged]);
+cp.execFileSync(process.env.GS_PYTHON || 'python', ['-c', 'import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', path.resolve(__dirname,'../gscript-0.6.1.vsix'), packaged]);
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gs vscode '));
 fs.mkdirSync(path.join(workspace, '.vscode'));
 fs.writeFileSync(path.join(workspace, '.vscode/settings.json'), JSON.stringify({
