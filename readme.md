@@ -1,108 +1,127 @@
 <div align="center">
 
-# GS / gscript
+# GScript
 
-**Go風の構文。GS自身の型検査。JavaScriptの実行環境。**
+**JavaScriptのエコシステムへ。OSのネイティブAPIへ。**
+
+Go風の構文と独自の型検査を備えた、2つの実行経路を持つ言語。
+
+[言語ガイド](docs/language-v0.5.md) · [JS / TS](docs/cli.md) · [ネイティブ](#ネイティブで使う) · [ライブラリ互換性](#ライブラリ互換性) · [エディター](docs/editors.md)
 
 [![Tests](https://github.com/sofia-gros/gscript/actions/workflows/test.yml/badge.svg)](https://github.com/sofia-gros/gscript/actions/workflows/test.yml)
 
-[コンパイラ v0.5.0](https://github.com/sofia-gros/gscript/releases/tag/v0.5.0) · [エディター拡張](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.5.0) · [インストール](docs/installation.md) · [ドキュメント](docs/language-v0.5.md)
-
 </div>
 
-GSはGo風の構文を使い、JavaScript ES2022 ModulesまたはTypeScriptへコンパイルする言語です。`func`、`:=`、struct、レシーバーを使いつつ、JSのオブジェクト・配列・npm・async/awaitを扱います。構文・型・スコープ・モジュールはGSコンパイラが検査します。
-
 ```go
-func greet(name string) string {
-  return "Hello, " + name
+func square(value int) int {
+  return value * value
 }
-println(greet("GS"))
+println(square(12))
 ```
 
-## はじめる
+GScript（GS）は、JavaScript / TypeScriptへの変換と、独自ランタイムによるネイティブ動作を軸に開発している言語です。JS / TS経路は公開済みで、機械語へのAOTコンパイル経路は現在開発中です。構文・型・スコープはGSコンパイラが検査します。
 
-[Release](https://github.com/sofia-gros/gscript/releases/tag/v0.5.0)からOS・CPUに合うネイティブ版を展開し、`gs`をPATHへ追加します。Python版・wheelもあります。[OS別インストール手順](docs/installation.md)を参照してください。
+```mermaid
+flowchart LR
+  GS[GSソース] --> Check[GSコンパイラの型検査]
+  Check --> JS[JavaScript / TypeScript]
+  JS --> Web[Node.js・ブラウザー・npm]
+  Check --> Native[C11 + GSネイティブランタイム]
+  Native --> Toolchain[Clang / GCC / Zig]
+  Toolchain --> Machine[OSの実行ファイル・ライブラリ]
+  Machine --> ABI[C ABI・Win32 API]
+```
 
-上のコードを`main.gs`へ保存します。
+## 2つの実行経路
+
+| | JS / TS | Native |
+| --- | --- | --- |
+| 生成物 | `.js` / `.mjs` / `.ts` | 実行ファイル・オブジェクト・静的／共有ライブラリ |
+| 実行環境 | Node.js・ブラウザー等 | 対象OSとリンクしたライブラリ |
+| ライブラリ | JavaScript・TypeScript・npm・JSDoc・`.d.ts` | C ABI、固定幅型、ポインター、コールバック、OS API |
+| GSの検査 | GSコンパイラ | GSコンパイラのネイティブ型検査 |
+| 配布状況 | [v0.5.0で公開済み](https://github.com/sofia-gros/gscript/releases/tag/v0.5.0) | 開発中。実装・検証後に公開予定。v0.5.0には未収録 |
+
+開発中のネイティブ出力には、文字列・出力・数値エラー処理等を担う小さなGSランタイムが静的に組み込まれます。実行にNode.js・Python・JSエンジンは必要としない構成です。ウィンドウ・イベントループ・描画機能は、C ABIを使うライブラリとして実装する設計です。
+
+## JS / TSで使う
+
+[OS別インストール手順](docs/installation.md)に従い、公開済みコンパイラを導入します。冒頭のコードを`main.gs`として保存してください。
 
 ```sh
 gs main.gs
 node dist/main.js
-# Hello, GS
 ```
-
-GSのみのコンパイルにNode.js・TypeScriptは不要です。生成JSの検証対象はNode.js 22/24です。外部JS/TSの型読み取りにはNode.jsとTypeScript Compiler APIが必要です。
 
 ```sh
-gs init demo --template node
-cd demo
-gs .
-node dist/main.js
+gs .                            # プロジェクトをminify JSへ
+gs . --no-minify                 # 可読JSへ
+gs . --format mjs
+gs . --format ts
+gs . --sourcemap --declaration
+gs . --ts-compiler ts            # GS検査後に公式TSでJS生成
 ```
 
-## ビルドとツール
-
-| コマンド | 動作 |
-| --- | --- |
-| `gs .` | main.gs/main.gosから依存もビルド、既定はminify JS |
-| `gs main.gs` | dist/main.jsへ可読JS |
-| `gs . --no-minify` | コメント・名前を維持した可読出力 |
-| `gs . --format mjs` | Nodeで直接実行できるES Modules |
-| `gs . --format ts` | 型注釈付きTypeScript |
-| `gs . --ts-compiler ts` | GS検査後に公式TypeScriptでJS生成 |
-| `gs . --sourcemap --declaration` | Source Mapと公開APIの型宣言も生成 |
-| `gs . --check` | 型検査のみ |
-| `gs lint` / `gs fmt` | 追加診断 / ソース整形 |
-| `gs watch` | 差分ビルド、失敗時は既存出力を維持 |
-
-設定ファイルは不要です。`gsconfig.json`でentry/outDir/format/minify/strictNull/lib等を指定できます。JS/TS出力には必要なESM設定を作成します。npm依存のバンドルは行いません。[CLI仕様](docs/cli.md)
-
-## 言語と型
-
-intとfloatをコンパイル時に区別し、数値型専用のランタイム処理を生成しません。float64はfloatの別名、numberはJSとの共通数値型です。
-
-```go
-a := 10
-b := 2.5
-// a + b は型エラー
-println(float(a) + b)
-```
-
-struct継承、constructor/super、interface、implements、制約付きgenerics、union・リテラル型、nullable、optional chaining、nullish coalescing、enum、switch、static、アクセス制御、readonly、GSモジュール間の型共有に対応します。`--strict-null`で厳密なnil検査を選べます。
-
-[数値型](docs/numeric-types.md) · [組み込み関数](docs/builtins.md) · [配列](docs/arrays.md) · [v0.4からの移行](docs/migration-v0.4-to-v0.5.md)
-
-## JavaScript・TypeScriptとの連携
+設定ファイルは必須ではありません。GSモジュールの依存を解決し、必要なES Modules設定を生成します。外部JS/TS・npmの型情報はTypeScript APIから読み取り、GS自身が呼び出しの適否を検査します。
 
 ```sh
 npm install --save-dev typescript@5.9.3
-gs . --check
+npm install phaser@3.90.0
+gs game.gs --check
 ```
 
-外部JS/TS、JSDoc、.d.ts、node_modulesの型情報を読み、呼び出しの適否をGSが検査します。最終JS生成は既定のGSまたは公式TS 5.9/6.0/7.0から選べます。TS7のネイティブCLIと外部型用APIの併用方法、DOM・Node・Workerの設定は[相互運用ガイド](docs/typescript-interop.md)を参照してください。
+Node.js・TypeScript・npmとの既存互換性はJS / TS経路で維持します。[外部型・TS 5.9/6.0/7.0・Node/DOM/Worker設定](docs/typescript-interop.md)
 
-## エディター
+## ネイティブで使う
 
-[Plugin v0.5.0](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.5.0)から導入します。コンパイラとプラグインは別Releaseです。
+ネイティブ経路は現在開発中です。既存のv0.5.0 Releaseおよび現在公開済みのCLIには含まれていません。実装と検証の公開後に、導入コマンドとネイティブ用ガイドを追加します。
 
-- **VSCode:** VSIXにLSPを同梱。Python 3.12以降、またはネイティブgs-lspで起動します。
-- **Zed:** ZIPを展開し、Rust・Gitを準備してInstall Dev Extensionを使います。Tree-sitterのハイライトとLSPを提供します。
+設計は`GS → GSによる型検査 → C11 + 小さなGSランタイム → Clang / GCC / Zig → 機械語`です。固定幅整数、ポインター、C互換struct/union、固定長配列、関数ポインター、Windowsの`system`呼び出し規約を対象とします。実行ファイルに加え、オブジェクト・静的／共有ライブラリの生成を整備しています。
 
-診断、ホバー、定義ジャンプ、参照検索、リネーム、ローカル・プロパティ補完、Signature Help、自動import候補、Lint、整形に対応します。[正確な導入・更新・エラー対処](docs/editors.md)
+ウィンドウ構築・イベントループ・レンダリングは、C ABIやWin32 APIを利用するGSライブラリとして実装できるようにします。ウィンドウ・描画ライブラリ自体は今回の開発対象に含めていません。
 
-## ドキュメント・開発
+## ライブラリ互換性
 
-[出力](docs/compiler-output.md) · [Source Map](docs/source-maps.md) · [型宣言](docs/declarations.md) · [Lint](docs/lint.md) · [Formatter](docs/formatter.md) · [性能](docs/performance.md)
+| ライブラリ | 対応する実行経路 |
+| --- | --- |
+| Node.js標準API・npmのJS / TSパッケージ | 公開済みのJS / TS経路で利用 |
+| Phaser等のブラウザーライブラリ | JS / TS経路で型検査・生成し、対応実行環境で利用 |
+| C ABIを持つ既存ライブラリ | 開発中のNative経路で連携を整備 |
+| Win32 API・OS API | Native経路の外部関数・コールバックから接続する設計 |
+| GSで作るネイティブライブラリ | C ABIで公開し、C等からも呼び出せる構成を開発中 |
 
-Python 3.12以降を使います。
+Node.js・TypeScript・npmとの既存互換性を維持します。JSライブラリはJSの実行環境、C ABIライブラリは対応するネイティブ環境で利用します。両経路の型・メモリ表現・対応範囲は、それぞれの仕様として明示します。
+
+## 言語と開発ツール
+
+JS / TS経路では、struct継承、interface、generics、union、nullable、enum、async/await、optional chaining等を利用できます。intとfloatはコンパイル時に区別し、生成JSへ数値型のタグや判定処理を追加しません。
 
 ```sh
-git clone https://github.com/sofia-gros/gscript.git
-cd gscript
-python -m gscript examples/hello.gs
-node examples/dist/hello.js
+gs init demo --template node     # browser / phaserも選択可能
+gs . --check
+gs lint
+gs fmt
+gs watch
+```
+
+[VSCode・Zed・LSP v0.5.0](https://github.com/sofia-gros/gscript/releases/tag/plugin-v0.5.0)では、ハイライト、診断、定義・参照、リネーム、補完、Signature Help、整形を提供します。現行のエディター統合とlint/fmt/watchはJS / TS用です。ネイティブ用の検査・エディター連携は開発状況に合わせて別途案内します。
+
+## ドキュメント
+
+| 目的 | ガイド |
+| --- | --- |
+| 全体構成を理解する | [2つの実行経路](#2つの実行経路) |
+| JSコンパイラを導入する | [インストール](docs/installation.md)・[CLI](docs/cli.md) |
+| ネイティブ実行・FFI・ライブラリ | 開発中。実装と同時に詳細ガイドを追加予定 |
+| Node/npmとC ABIの対応範囲を確認する | [ライブラリ互換性](#ライブラリ互換性) |
+| 型・生成物を理解する | [言語](docs/language-v0.5.md)・[数値](docs/numeric-types.md)・[Source Map](docs/source-maps.md)・[型宣言](docs/declarations.md) |
+| 更新・検証 | [v0.4→v0.5](docs/migration-v0.4-to-v0.5.md)・[性能](docs/performance.md)・[エディター](docs/editors.md) |
+
+## 開発と検証
+
+```sh
 npm ci --ignore-scripts
 python -m unittest discover -s tests -v
 ```
 
-公開ワークフローは3OSのネイティブ配布、生成物の実行、公式TS各版、Phaser、VSIX実接続、Zed用WASM・文法を検証してからReleaseを公開します。
+公開済みのJS / MJS / TSの実行・外部型・Phaser・配布物を検証します。開発中のネイティブ経路では、C ABIの双方向呼び出し、structレイアウト、コールバック、ライブラリ出力、Win32 SDKとのABI一致を追加検証しています。
