@@ -49,3 +49,7 @@ var count int = "three" // コンパイルエラー
 GSの型注釈はJSで消去します。structはJS class、配列はJS Array、数値はJS Numberです。Node.jsのAPIを使うコードにはNode.jsが、DOMを使うコードにはブラウザー等が必要です。TS出力は実行環境ではなく、さらにJSへ変換して利用するソースです。
 
 次は[基本・数値・演算](variables.md)、GoやJSとの違いは[比較](comparison.md)を参照してください。
+
+## 実際にネイティブでコンパイルする
+
+Clang・GCC・Zigそれぞれの指定と、Windows / Linux / macOSで生成物を動かすコマンドは、[ネイティブコンパイルと実行](native-build.md)にまとめています。

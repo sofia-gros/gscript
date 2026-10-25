@@ -680,6 +680,23 @@ impl Render for Manager {
                 }
                 Page::Toolchains => {
                     body=body.child(div().text_sm().text_color(cx.theme().muted_foreground).child("Clang・GCC・Zigのいずれか1つが必要です。検出時にはCプログラムのビルドと実行も確認します。JS / TS出力だけなら不要です。")).child(Button::new("detect-toolchains").icon(IconName::Search).label(if self.detecting{"検査中…"}else{"検出する"}).disabled(self.detecting).on_click(cx.listener(|this,_,_,cx|this.detect(cx))));
+                    body = body.child(
+                        Button::new("native-build-guide")
+                            .ghost()
+                            .icon(IconName::BookOpen)
+                            .label("GSをコンパイルして実行する方法")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if let Some(index) =
+                                    this.chapters.iter().position(|d| d.id == "native-build.md")
+                                {
+                                    this.chapter = index;
+                                    this.section = 0;
+                                    this.page = Page::Docs;
+                                    this.scroll.set_offset(point(px(0.), px(0.)));
+                                    cx.notify();
+                                }
+                            })),
+                    );
                     for (name, label) in [("clang", "Clang"), ("gcc", "GCC"), ("zig", "Zig")] {
                         let tool = self.toolchains.iter().find(|t| t.name == name);
                         let status = tool

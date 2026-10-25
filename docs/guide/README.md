@@ -35,6 +35,7 @@ GScript v0.6.0の実行モデルとコードの書き方を、基本から順に
 
 ## ネイティブ
 
+- [ネイティブコンパイルと実行](native-build.md)
 - [ネイティブの型とメモリ](native-types.md)
 - [C ABIとWin32](native-ffi.md)
 - [ネイティブの対応範囲](native-support.md)

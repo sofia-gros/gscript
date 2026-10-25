@@ -4,7 +4,7 @@ fn main() -> anyhow::Result<()> {
     let args: Vec<_> = std::env::args().collect();
     if args.iter().any(|a| a == "--self-check") {
         let pages = gscript_manager::docs::chapters();
-        anyhow::ensure!(pages.len() == 25, "embedded guide is incomplete");
+        anyhow::ensure!(pages.len() == 26, "embedded guide is incomplete");
         println!(
             "GScript Manager {}: {} embedded Markdown pages; native service ready",
             env!("CARGO_PKG_VERSION"),

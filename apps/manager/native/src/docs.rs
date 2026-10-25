@@ -27,7 +27,7 @@ mod tests {
     #[test]
     fn embedded_offline_guide() {
         let docs = chapters();
-        assert_eq!(docs.len(), 25);
+        assert_eq!(docs.len(), 26);
         assert!(
             docs.iter()
                 .any(|d| d.id == "comparison.md" && d.source.contains("JavaScript"))

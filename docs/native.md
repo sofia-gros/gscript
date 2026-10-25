@@ -1,5 +1,7 @@
 # ネイティブ実行とFFI
 
+**最初に動かす場合:** [Clang・GCC・Zigごとのコンパイルと実行手順](guide/native-build.md)を参照してください。Windows PowerShell、Linux / macOS、任意の導入先とPATHの扱いを説明しています。
+
 v0.6.0で配布する実験的なAOTバックエンドです。[コンパイラの導入](installation.md)後、`gs main.gs --backend native`で利用できます。下記の`python -m gscript`はソース版を使う場合の実行例です。
 
 ```text

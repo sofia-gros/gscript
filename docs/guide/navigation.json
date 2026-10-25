@@ -95,6 +95,11 @@
     "group": "外部連携"
   },
   {
+    "id": "native-build.md",
+    "title": "ネイティブコンパイルと実行",
+    "group": "ネイティブ"
+  },
+  {
     "id": "native-types.md",
     "title": "ネイティブの型とメモリ",
     "group": "ネイティブ"

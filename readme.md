@@ -132,6 +132,7 @@ cargo run --locked --manifest-path apps/manager/native/Cargo.toml
 | 関数・制御文・配列・例外・非同期 | [文と式](docs/guide/syntax-reference.md) |
 | struct・継承・interface・Generics・enum | [型とオブジェクト](docs/guide/structs.md) |
 | GS・JS・TS・npmの連携 | [モジュールと外部ライブラリ](docs/guide/javascript.md) |
+| Clang・GCC・Zigでコンパイルして実行 | [ネイティブの実行手順](docs/guide/native-build.md) |
 | 機械語実行・メモリ・C ABI・Win32 | [ネイティブ言語仕様](docs/guide/native-types.md) |
 | Go・JavaScriptとどう違うか | [3言語の書き方と意味の比較](docs/guide/comparison.md) |
 
