@@ -646,11 +646,17 @@ impl Service {
             );
             let installed = install_system_compiler(name, &release);
             installed.with_context(|| format!("{name}の導入処理に失敗しました"))?;
-            // Windows installers update registry PATH, not the environment of this running process.
             let inspected = self.inspect_toolchain(name, settings);
             let tool = inspected.executable.is_some().then_some(inspected);
             if let Some(tool) = tool {
                 if tool.usable {
+                    let actual = toolchains::installed_version(name, &tool.version)
+                        .context("導入後のコンパイラのバージョンを確認できません")?;
+                    ensure!(
+                        toolchains::newer_version(&actual, &release.tool_version()) == Some(false),
+                        "導入後の版が取得対象より古いままです: {actual} / 対象 {}",
+                        release.version
+                    );
                     return Ok(format!(
                         "{name}を導入し、Cプログラムのビルド・実行を確認しました。{}",
                         tool.version
@@ -1524,9 +1530,18 @@ fn install_system_compiler(name: &str, release: &ToolchainRelease) -> Result<()>
     #[cfg(target_os = "macos")]
     {
         let brew = find_executable("brew").context("Clang / GCCの導入にはHomebrewが必要です")?;
+        let installed = run(
+            &brew,
+            ["list", "--versions", release.package.as_str()],
+            Duration::from_secs(30),
+        )
+        .is_ok_and(|output| !output.trim().is_empty());
         run(
             &brew,
-            ["install", release.package.as_str()],
+            [
+                if installed { "upgrade" } else { "install" },
+                release.package.as_str(),
+            ],
             Duration::from_secs(1800),
         )?;
     }
