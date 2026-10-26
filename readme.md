@@ -121,7 +121,9 @@ GPUI + gpui-componentのネイティブGUIから、コンパイラ・拡張・�
 cargo run --locked --manifest-path apps/manager/native/Cargo.toml
 ```
 
-[ビルド環境・導入先・PATH設定・現在の対応範囲](apps/manager/native/README.md)。画面と実機での導入動作は最終確認前です。
+Clang / GCC / Zigのインストール済み・提供元の最新版・ダウンロード対象の版を表示し、公式メタデータから取得URLとSHA256を解決します。個別アーカイブのURLや版は固定しません。
+
+[ビルド環境・導入先・PATH設定・現在の対応範囲](apps/manager/native/README.md)。画面の最終操作確認は実機で行います。
 
 ## ドキュメント
 
